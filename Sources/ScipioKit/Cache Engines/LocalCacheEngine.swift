@@ -10,17 +10,17 @@ struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
     }
 
     func downloadUrl(for product: String, version: String) -> URL {
-        return cachePath(for: product, version: version).url
+        return localPath(for: product, version: version).url
     }
 
     func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
-        return Just(cachePath(for: product, version: version).exists)
+        return Just(localPath(for: product, version: version).exists)
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
     func put(product: String, version: String, path: Path) -> AnyPublisher<(), Error> {
-        let cachePath = cachePath(for: product, version: version)
+        let cachePath = localPath(for: product, version: version)
 
         return Just(cachePath)
             .tryMap { cachePath -> Void in
@@ -40,7 +40,7 @@ struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
     }
 
     func get(product: String, version: String, destination: Path) -> AnyPublisher<Path, Error> {
-        let cachePath = cachePath(for: product, version: version)
+        let cachePath = localPath(for: product, version: version)
 
         return Just(cachePath)
             .tryMap { cachePath -> Path in
@@ -55,7 +55,7 @@ struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
             .eraseToAnyPublisher()
     }
 
-    private func cachePath(for product: String, version: String) -> Path {
+    private func localPath(for product: String, version: String) -> Path {
         return Path(path) + product + "/\(product)-\(version).xcframework.zip"
     }
 }
