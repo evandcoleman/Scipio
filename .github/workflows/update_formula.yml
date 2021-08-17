@@ -20,7 +20,7 @@ jobs:
         VERSION=${GITHUB_REF/refs\/tags\//}
         REPO_PATH=$(pwd)
         URL="https://github.com/evandcoleman/Scipio/archive/refs/tags/$VERSION.tar.gz"
-        brew tap evandcoleman/tap https://github.com/evandcoleman/homebrew-tap.git
+        brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/evandcoleman/homebrew-tap.git
         FORMULA_DIR=/usr/local/Homebrew/Library/Taps/evandcoleman/homebrew-tap/Formula
         [ ! -d $FORMULA_DIR ] && mkdir -p $FORMULA_DIR
         cd $FORMULA_DIR
@@ -48,6 +48,9 @@ jobs:
         echo ::set-output name=bottle_name::$BOTTLE_NAME
         echo ::set-output name=bottle_json::$BOTTLE_JSON
         echo ::set-output name=bottle_sha::$BOTTLE_SHA256
+      env:
+        GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+        GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
