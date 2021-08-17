@@ -18,24 +18,28 @@ jobs:
       id: update_formula
       run: |
         VERSION=${GITHUB_REF/refs\/tags\//}
+        REPO_PATH=$(pwd)
         URL="https://github.com/evandcoleman/Scipio/archive/$VERSION.tar.gz"
         brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/evandcoleman/homebrew-tap.git
-        cd /usr/local/Homebrew/Library/Taps/evandcoleman/homebrew-tap/Formula
-        sed -E -i '' 's~^  url ".+"~  url "'$URL\"~ ./formula.rb
-        brew fetch ./formula.rb || true
-        SHA256=$(shasum --algorithm 256 $(brew --cache --build-from-source ./formula.rb) | awk '{print $1}')
-        sed -E -i '' 's/^  sha256 ".+"/  sha256 "'$SHA256\"/ ./formula.rb
+        FORMULA_DIR=/usr/local/Homebrew/Library/Taps/evandcoleman/homebrew-tap/Formula
+        [ ! -d $FORMULA_DIR ] && mkdir -p $FORMULA_DIR
+        cd $FORMULA_DIR
+        [ ! -f "./scipio.rb" ] && cp $REPO_PATH/scipio.rb ./scipio.rb
+        sed -E -i '' 's~^  url ".+"~  url "'$URL\"~ ./scipio.rb
+        brew fetch ./scipio.rb || true
+        SHA256=$(shasum --algorithm 256 $(brew --cache --build-from-source ./scipio.rb) | awk '{print $1}')
+        sed -E -i '' 's/^  sha256 ".+"/  sha256 "'$SHA256\"/ ./scipio.rb
         git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
         git config --global user.name $GITHUB_ACTOR
         git checkout -b formula/scipio/$VERSION
-        brew install --build-bottle ./formula.rb
-        brew bottle --json --root-url=https://github.com/evandcoleman/Scipio/releases/download/$VERSION ./formula.rb
+        brew install --build-bottle ./scipio.rb
+        brew bottle --json --root-url=https://github.com/evandcoleman/Scipio/releases/download/$VERSION ./scipio.rb
         FILE=$(ls -d *.bottle.tar.gz | head -1)
         mv "$FILE" "$(echo "$FILE" | sed s/--/-/)"
         BOTTLE=$(ls -d $PWD/*.bottle.tar.gz | head -1)
         BOTTLE_JSON=$(ls -d $PWD/*.bottle.json | head -1)
         brew bottle --merge $BOTTLE_JSON --write --no-commit
-        git add formula.rb
+        git add scipio.rb
         git commit -m "scipio $VERSION"
         git push origin formula/scipio/$VERSION
         BOTTLE_SHA256=$(shasum --algorithm 256 $BOTTLE | awk '{print $1}')
