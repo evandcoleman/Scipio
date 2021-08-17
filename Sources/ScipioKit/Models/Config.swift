@@ -49,7 +49,7 @@ public struct Config: Decodable, Equatable {
         current.buildDirectory = buildDirectory
     }
 
-    static func readConfig(from path: Path = Path.current + "scipio.yml") -> Config {
+    public static func readConfig(from path: Path = Path.current + "scipio.yml") -> Config {
         guard path.exists else { log.fatal("Couldn't find config file at path: \(path.string)") }
 
         do {
@@ -57,6 +57,7 @@ public struct Config: Decodable, Equatable {
             let decoder = YAMLDecoder()
             var config = try decoder.decode(Config.self, from: data)
             config._path = path
+            Config.current = config
 
             return config
         } catch {

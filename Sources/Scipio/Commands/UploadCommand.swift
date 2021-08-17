@@ -22,6 +22,8 @@ extension Command {
 
             if let path = options.config {
                 Config.setPath(Path(path), buildDirectory: options.buildPath)
+            } else {
+                Config.readConfig()
             }
 
             guard let projectPath = options.project ?? Config.current.directory.glob("*.xcodeproj").first?.string else {
