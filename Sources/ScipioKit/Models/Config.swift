@@ -2,15 +2,20 @@ import Foundation
 import PathKit
 import Yams
 
-struct Config: Decodable, Equatable {
+public struct Config: Decodable, Equatable {
 
-    static let current: Config = Config.readConfig()
+    public private(set) static var current: Config!
 
-    let packages: [String: Package]
+    let cache: CacheEngineDescriptor
+    let packages: [String: Package]?
+    let exclude: [String]?
 
-    private let buildDirectory: String?
+    public var buildDirectory: String?
 
-    var buildPath: Path {
+    public var path: Path { _path }
+    public var directory: Path { _path.parent() }
+
+    public var buildPath: Path {
         if let buildDirectory = buildDirectory {
             return Path(buildDirectory)
         } else {
@@ -18,14 +23,44 @@ struct Config: Decodable, Equatable {
         }
     }
 
+    public let cachePath: Path = {
+        let path = Path(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].path) + "Scipio"
+
+        if !path.exists {
+            try! path.mkdir()
+        }
+
+        return path
+    }()
+
+    private var _path: Path!
+
+    enum CodingKeys: String, CodingKey {
+        case cache
+        case packages
+        case exclude
+        case buildDirectory
+    }
+
+    public static func setPath(_ path: Path, buildDirectory: String?) {
+        let correctedPath = path.isFile ? path : path + "scipio.yml"
+        current = readConfig(from: correctedPath)
+        current._path = correctedPath
+        current.buildDirectory = buildDirectory
+    }
+
     static func readConfig(from path: Path = Path.current + "scipio.yml") -> Config {
+        guard path.exists else { log.fatal("Couldn't find config file at path: \(path.string)") }
+
         do {
             let data = try Data(contentsOf: path.url)
             let decoder = YAMLDecoder()
-            return try decoder.decode(Config.self, from: data)
+            var config = try decoder.decode(Config.self, from: data)
+            config._path = path
+
+            return config
         } catch {
-            print("Error read config file at \(path): \(error)")
-            exit(0)
+            log.fatal("Error read config file at path \(path): \(error)")
         }
     }
 }

@@ -18,10 +18,10 @@ final class ConfigTests: XCTestCase {
         try path.write(configText)
         let config = Config.readConfig(from: path)
 
-        XCTAssertEqual(config.packages.count, 2)
-        XCTAssertNotNil(config.packages["Facebook"])
-        XCTAssertNotNil(config.packages["Firebase"])
-        XCTAssertEqual(config.packages["Facebook"]?.products, [Config.Product.scheme("FacebookCore")])
-        XCTAssertEqual(config.packages["Firebase"]?.products, [Config.Product.target("FirebaseAnalytics"), Config.Product.scheme("FirebaseAuth")])
+        XCTAssertEqual(config.packages?.count, 2)
+        XCTAssertNotNil(config.packages?["Facebook"])
+        XCTAssertNotNil(config.packages?["Firebase"])
+        XCTAssertEqual(config.packages?["Facebook"]?.products, [Config.Product.scheme("FacebookCore")])
+        XCTAssertEqual(config.packages?["Firebase"]?.products, [Config.Product.target("FirebaseAnalytics"), Config.Product.scheme("FirebaseAuth")])
     }
 }

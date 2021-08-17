@@ -13,14 +13,14 @@ struct ShellCommand {
     }
 
     let command: String
-    let pipe = Pipe()
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
 
     private let task = Process()
 
     func run() {
-        print(command)
-        task.standardOutput = pipe
-        task.standardError = pipe
+        task.standardOutput = outputPipe
+        task.standardError = errorPipe
         task.arguments = ["-c", command]
         task.launchPath = "/bin/bash"
         task.launch()
@@ -29,20 +29,41 @@ struct ShellCommand {
     func waitForOutput() -> Data {
         waitUntilExit()
 
-        return pipe.fileHandleForReading.readDataToEndOfFile()
+        return outputPipe.fileHandleForReading.readDataToEndOfFile()
     }
 
-    func logOutput() -> ShellCommand {
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-            if let line = String(data: handle.availableData, encoding: .utf8) {
-                print(line)
+    func waitForOutputString() -> String {
+        return String(data: waitForOutput(), encoding: .utf8) ?? ""
+    }
+
+    @discardableResult
+    func onReadLine(_ handler: @escaping (String) -> Void) -> ShellCommand {
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            if let line = String(data: handle.availableData, encoding: .utf8), !line.isEmpty {
+                handler(line)
+            }
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            if let line = String(data: handle.availableData, encoding: .utf8), !line.isEmpty {
+                handler(line)
             }
         }
 
         return self
     }
 
+    @discardableResult
+    func logOutput() -> ShellCommand {
+        onReadLine { log.verbose($0) }
+    }
+
     func waitUntilExit() {
         task.waitUntilExit()
+
+        if task.terminationStatus > 0 {
+            log.error(String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "Command failed")
+
+            exit(task.terminationStatus)
+        }
     }
 }

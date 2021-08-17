@@ -105,7 +105,8 @@ iOSInjectionProject/
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*
@@ -127,3 +128,6 @@ Temporary Items
 .apdisk
 
 # End of https://www.toptal.com/developers/gitignore/api/macos
+
+*.xcodeproj
+.swiftpm

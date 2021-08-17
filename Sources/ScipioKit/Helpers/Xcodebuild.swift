@@ -1,4 +1,6 @@
 import Foundation
+import PathKit
+import XcbeautifyLib
 
 public struct Xcodebuild {
     var command: Command
@@ -9,6 +11,7 @@ public struct Xcodebuild {
     var clonedSourcePackageDirectory: String?
     var sdk: SDK?
     var useSystemSourceControlManagement: Bool = true
+    var disableAutomaticPackageResolution: Bool = false
     var additionalArguments: [String] = []
     var additionalBuildSettings: [String: String] = [:]
 
@@ -21,6 +24,7 @@ public struct Xcodebuild {
         clonedSourcePackageDirectory: String? = nil,
         sdk: SDK? = nil,
         useSystemSourceControlManagement: Bool = true,
+        disableAutomaticPackageResolution: Bool = false,
         additionalArguments: [String] = [],
         additionalBuildSettings: [String: String] = [:]
     ) {
@@ -32,14 +36,31 @@ public struct Xcodebuild {
         self.clonedSourcePackageDirectory = clonedSourcePackageDirectory
         self.sdk = sdk
         self.useSystemSourceControlManagement = useSystemSourceControlManagement
+        self.disableAutomaticPackageResolution = disableAutomaticPackageResolution
         self.additionalArguments = additionalArguments
         self.additionalBuildSettings = additionalBuildSettings
     }
 
     func run() {
-        sh(buildCommand())
-            .logOutput()
+        let parser = Parser()
+        let output = OutputHandler(quiet: false, quieter: false, isCI: false, { log.passthrough($0) })
+
+        let command = buildCommand()
+        log.verbose(command)
+        sh(command)
+            .onReadLine { line in
+                if log.level.levelValue <= Log.Level.verbose.levelValue {
+                    log.verbose(line)
+                } else {
+                    guard let formatted = parser.parse(line: line, colored: Log.useColors) else { return }
+                    output.write(parser.outputType, formatted)
+                }
+            }
             .waitUntilExit()
+
+        if let summary = parser.summary {
+            print(summary.format())
+        }
     }
 
     private func buildCommand() -> String {
@@ -72,8 +93,11 @@ public struct Xcodebuild {
         if let sdk = sdk {
             args.append(contentsOf: ["-sdk", sdk.rawValue])
         }
-        if useSystemSourceControlManagement {
+        if useSystemSourceControlManagement, command != .createXCFramework {
             args.append(contentsOf: ["-scmProvider", "system"])
+        }
+        if disableAutomaticPackageResolution {
+            args.append("-disableAutomaticPackageResolution")
         }
 
         args.append(contentsOf: additionalArguments)
