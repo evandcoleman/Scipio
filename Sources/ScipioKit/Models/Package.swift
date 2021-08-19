@@ -219,7 +219,11 @@ public struct Package {
 
                     return self.download(from: url)
                         .tryMap { paths in
-                            let result = [name: paths.map(\.lastComponentWithoutExtension).uniqued()]
+                            let filteredPaths = paths
+                                .map(\.lastComponentWithoutExtension)
+                                .uniqued()
+                                .filter { Config.current.packages?[name]?.exclude?.contains($0) != true }
+                            let result = [name: filteredPaths]
                             let data = try JSONSerialization.data(withJSONObject: result, options: [])
                             try cachedProductNamesPath.write(data)
 

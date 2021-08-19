@@ -72,6 +72,7 @@ extension Config {
         let url: URL?
         let version: String?
         let products: [Product]?
+        let exclude: [String]?
     }
 
     enum Product: Decodable, Equatable {
