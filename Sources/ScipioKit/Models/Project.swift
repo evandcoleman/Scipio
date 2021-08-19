@@ -80,9 +80,19 @@ public struct Project {
             .tryMap { try Package(path: Config.current.directory + $0) }
             .eraseToAnyPublisher()
 
+        let urlPackages = Future<[Package], Error>.try { promise in
+            let packages = try (Config.current.packages ?? [:])
+                .filter { $0.value.url != nil }
+                .map { try Package(name: $0.key, package: $0.value) }
+            promise(.success(packages))
+        }
+        .flatMap { $0.publisher }
+        .eraseToAnyPublisher()
+
         return Publishers.MergeMany(
             packages,
-            projectReferences
+            projectReferences,
+            urlPackages
         )
         .collect()
         .map { $0.sorted { $0.name < $1.name } }
@@ -90,7 +100,7 @@ public struct Project {
     }
 
     internal func productNames(config: Config.Package?) throws -> [String: [String]] {
-        let schemeNames = config?.products.map(\.name) ?? [name]
+        let schemeNames = config?.products?.map(\.name) ?? [name]
 
         return try schemeNames
             .reduce(into: [:]) { accumulated, value in
@@ -118,14 +128,15 @@ public struct Project {
             .buildables
             .publisher
             .setFailureType(to: Error.self)
-            .tryFlatMap { buildable -> AnyPublisher<(), Error> in
+            .combineLatest(package.productNames())
+            .tryFlatMap { buildable, productNames -> AnyPublisher<(), Error> in
                 let result = Just(())
                     .setFailureType(to: Error.self)
                     .eraseToAnyPublisher()
 
                 switch buildable {
                 case .scheme(let scheme):
-                    let shouldBuild = force || productsToBuild.contains { package.productNames[scheme]?.contains($0) ?? false }
+                    let shouldBuild = force || productsToBuild.contains { productNames[scheme]?.contains($0) ?? false }
 
                     guard shouldBuild else {
                         log.info("⏭ Skipping scheme \(scheme)")
@@ -147,7 +158,7 @@ public struct Project {
 
                     try package.createXCFramework(scheme: scheme, sdks: sdks, skipIfExists: skipClean, force: force)
                 case .project(let projectPath, let scheme):
-                    let shouldBuild = force || productsToBuild.contains { package.productNames[scheme]?.contains($0) ?? false }
+                    let shouldBuild = force || productsToBuild.contains { productNames[scheme]?.contains($0) ?? false }
 
                     guard shouldBuild else {
                         log.info("⏭ Skipping scheme \(scheme)")
@@ -164,7 +175,7 @@ public struct Project {
                     }
                     try package.createXCFramework(scheme: scheme, sdks: sdks, skipIfExists: skipClean, force: force)
                 case .target(let target):
-                    let shouldBuild = force || productsToBuild.contains { package.productNames[target]?.contains($0) ?? false }
+                    let shouldBuild = force || productsToBuild.contains { productNames[target]?.contains($0) ?? false }
 
                     guard shouldBuild else {
                         log.info("⏭ Skipping target \(target)")
@@ -175,15 +186,21 @@ public struct Project {
 
                     return package
                         .downloadOrBuildTarget(named: target, to: destination, sdks: sdks, derivedDataPath: derivedDataPath, skipClean: skipClean, force: force)
-                        .tryFlatMap { downloadPath -> AnyPublisher<(), Error> in
-
-                            if downloadPath.string.hasSuffix(".zip") {
-                                try Zip.unzipFile(downloadPath.url, destination: destination.url, overwrite: true, password: nil)
-                            }
-
-                            return result
-                        }
+                        .map { _ in () }
                         .eraseToAnyPublisher()
+                case .download(let url):
+                    let downloadPath = Config.current.cachePath + url.lastPathComponent
+
+                    if downloadPath.exists {
+                        return Just(())
+                            .setFailureType(to: Error.self)
+                            .eraseToAnyPublisher()
+                    } else {
+                        return package
+                            .download(from: url)
+                            .map { _ in () }
+                            .eraseToAnyPublisher()
+                    }
                 }
 
                 return result

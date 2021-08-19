@@ -27,9 +27,11 @@ struct ShellCommand {
     }
 
     func waitForOutput() -> Data {
+        var output = ""
+        onReadLine(pipe: outputPipe) { output += $0 }
         waitUntilExit()
 
-        return outputPipe.fileHandleForReading.readDataToEndOfFile()
+        return output.data(using: .utf8)!
     }
 
     func waitForOutputString() -> String {
@@ -37,15 +39,17 @@ struct ShellCommand {
     }
 
     @discardableResult
-    func onReadLine(_ handler: @escaping (String) -> Void) -> ShellCommand {
-        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+    func onReadLine(pipe: Pipe? = nil, _ handler: @escaping (String) -> Void) -> ShellCommand {
+        (pipe ?? outputPipe).fileHandleForReading.readabilityHandler = { handle in
             if let line = String(data: handle.availableData, encoding: .utf8), !line.isEmpty {
                 handler(line)
             }
         }
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in
-            if let line = String(data: handle.availableData, encoding: .utf8), !line.isEmpty {
-                handler(line)
+        if pipe == nil {
+            errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                if let line = String(data: handle.availableData, encoding: .utf8), !line.isEmpty {
+                    handler(line)
+                }
             }
         }
 

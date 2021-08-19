@@ -52,7 +52,7 @@ public struct Xcodebuild {
                 if log.level.levelValue <= Log.Level.verbose.levelValue {
                     log.verbose(line)
                 } else {
-                    guard let formatted = parser.parse(line: line, colored: Log.useColors) else { return }
+                    guard let formatted = parser.parse(line: line, colored: log.useColors) else { return }
                     output.write(parser.outputType, formatted)
                 }
             }

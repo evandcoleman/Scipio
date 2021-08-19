@@ -15,3 +15,9 @@ extension Data {
         }
     }
 }
+
+extension String {
+    func checksum(_ strategy: Data.ChecksumStrategy) -> String {
+        return data(using: .utf8)!.checksum(strategy)
+    }
+}

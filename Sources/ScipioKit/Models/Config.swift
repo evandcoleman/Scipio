@@ -68,7 +68,9 @@ public struct Config: Decodable, Equatable {
 
 extension Config {
     struct Package: Decodable, Equatable {
-        let products: [Product]
+        let url: URL?
+        let version: String?
+        let products: [Product]?
     }
 
     enum Product: Decodable, Equatable {

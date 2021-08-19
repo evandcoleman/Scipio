@@ -2,6 +2,8 @@ import Combine
 import Foundation
 import PathKit
 
+private var existsCache: [String: Bool] = [:]
+
 struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
 
     let url: URL
@@ -14,12 +16,21 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
     }
 
     func downloadUrl(for product: String, version: String) -> URL {
+        let encodedProduct = product.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+        let encodedVersion = version.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+
         return url
-            .appendingPathComponent(product)
-            .appendingPathComponent("\(product)-\(version).xcframework.zip")
+            .appendingPathComponent(encodedProduct)
+            .appendingPathComponent("\(encodedProduct)-\(encodedVersion).xcframework.zip")
     }
 
     func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
+        if let exists = existsCache[[product, version].joined(separator: "-")] {
+            return Just(exists)
+                .setFailureType(to: Error.self)
+                .eraseToAnyPublisher()
+        }
+
         var request = URLRequest(url: downloadUrl(for: product, version: version))
         request.httpMethod = "HEAD"
 
@@ -27,6 +38,9 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
             .dataTaskPublisher(for: request)
             .map { (($0.response as? HTTPURLResponse)?.statusCode ?? 500) < 400 }
             .mapError { $0 as Error }
+            .handleEvents(receiveOutput: { exists in
+                existsCache[[product, version].joined(separator: "-")] = exists
+            })
             .eraseToAnyPublisher()
     }
 

@@ -6,20 +6,25 @@ import Zip
 
 public struct Package {
 
-    public let path: Path
+    public let path: Path!
     public let description: Description
     public let version: String
-    public let productNames: [String: [String]] // [scheme: [product]]
     public let buildables: [Buildable]
 
     public var name: String { description.name }
 
     private let workingPath: Path
 
+    private let urlSession: URLSession = .createWithExtensionsSupport()
     private let cancelBag = CancelBag()
 
     enum UploadError: Error {
         case zipFailed(product: String, path: Path)
+    }
+
+    enum LoadError: Error {
+        case missingUrl
+        case missingVersion
     }
 
     public init(path: Path) throws {
@@ -27,7 +32,6 @@ public struct Package {
         self.path = packagePath
         let description = try Description(path: path)
         self.description = description
-        self.productNames = try description.getProductNames()
         self.buildables = description.getBuildables()
         self.workingPath = Config.current.cachePath + description.name
 
@@ -61,13 +65,26 @@ public struct Package {
             self.version = try readGitHead(packagePath)
         case .project:
             self.version = try readGitHead(packagePath.parent())
+        case .url:
+            fatalError()
         }
     }
 
+    internal init(name: String, package: Config.Package) throws {
+        guard let url = package.url else { throw LoadError.missingUrl }
+        guard let version = package.version else { throw LoadError.missingVersion }
+
+        self.path = nil
+        let description: Description = .url(name: name, url: url, version: version)
+        self.description = description
+        self.buildables = description.getBuildables()
+        self.workingPath = Config.current.cachePath + description.name
+        self.version = version
+    }
+
     public func upload(parent: Package, force: Bool) -> AnyPublisher<(), Error> {
-        return productNames
-            .flatMap { $0.value }
-            .publisher
+        return productNames()
+            .flatMap { $0.flatMap(\.value).publisher }
             .flatMap { product -> AnyPublisher<(String, Bool), Error> in
                 guard !force else {
                     return Just((product, true))
@@ -101,11 +118,11 @@ public struct Package {
                 let frameworkPath = self.artifactPath(for: product)
                 let zipPath = self.compressedPath(for: product)
 
-                if zipPath.exists {
-                    try zipPath.delete()
-                }
-
                 if frameworkPath.exists {
+                    if zipPath.exists {
+                        try zipPath.delete()
+                    }
+                    
                     do {
                         try Zip.zipFiles(paths: [frameworkPath.url], zipFilePath: zipPath.url, password: nil, progress: nil)
                     } catch ZipError.zipFail {
@@ -172,10 +189,56 @@ public struct Package {
             .eraseToAnyPublisher()
     }
 
+    internal func productNames() -> AnyPublisher<[String: [String]] /* [scheme: [product]] */, Error> {
+        let package = Config.current.packages?[name]
+
+        return Just(description)
+            .setFailureType(to: Error.self)
+            .tryFlatMap { description -> AnyPublisher<[String: [String]], Error> in
+                switch description {
+                case .package(let manifest):
+                    if let products = package?.products {
+                        return Just(products.reduce(into: [:]) { $0[$1.name] = [$1.name] })
+                            .setFailureType(to: Error.self)
+                            .eraseToAnyPublisher()
+                    } else {
+                        return Just(manifest.products.reduce(into: [:]) { $0[$1.name] = [$1.name] })
+                            .setFailureType(to: Error.self)
+                            .eraseToAnyPublisher()
+                    }
+                case .project(let project):
+                    return Just(try project.productNames(config: package))
+                        .setFailureType(to: Error.self)
+                        .eraseToAnyPublisher()
+                case .url(let name, let url, _):
+                    let cachedProductNamesPath = Config.current.cachePath + "\(url.path.checksum(.sha256)).json"
+
+                    if cachedProductNamesPath.exists {
+                        let result = try JSONSerialization.jsonObject(with: try cachedProductNamesPath.read(), options: []) as! [String: [String]]
+
+                        return Just(result)
+                            .setFailureType(to: Error.self)
+                            .eraseToAnyPublisher()
+                    }
+
+                    return self.download(from: url)
+                        .tryMap { paths in
+                            let result = [name: paths.map(\.lastComponentWithoutExtension)]
+                            let data = try JSONSerialization.data(withJSONObject: result, options: [])
+                            try cachedProductNamesPath.write(data)
+
+                            return result
+                        }
+                        .eraseToAnyPublisher()
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+
     internal func missingProducts() -> AnyPublisher<[String], Error> {
-        let publishers = productNames
-            .flatMap { $0.value }
-            .map { product -> AnyPublisher<String, Error> in
+        return productNames()
+            .flatMap { $0.flatMap(\.value).publisher }
+            .flatMap { product -> AnyPublisher<String, Error> in
                 if self.artifactPath(for: product).exists {
                     return Empty()
                         .setFailureType(to: Error.self)
@@ -188,9 +251,6 @@ public struct Package {
                     .map { _ in product }
                     .eraseToAnyPublisher()
             }
-
-        return Publishers
-            .MergeMany(publishers)
             .collect()
             .eraseToAnyPublisher()
     }
@@ -237,7 +297,6 @@ public struct Package {
             archivePath: archivePath.string,
             derivedDataPath: derivedDataPath.string,
             sdk: sdk,
-            disableAutomaticPackageResolution: true,
             additionalBuildSettings: buildSettings
         )
 
@@ -320,46 +379,40 @@ public struct Package {
             let releasePath = buildProductsPath + "Release-\(sdk.rawValue)"
             let swiftModulePath = releasePath + "\(frameworkName).swiftmodule"
             let resourcesBundlePath = releasePath + "\(frameworkName)_\(frameworkName).bundle"
-            var headerSearchPaths: [Path] = []
 
-            if case .package(let manifest) = description {
-                let allTargets = ((manifest
-                    .targets
-                    .first { $0.name == frameworkName }?
-                    .dependencies ?? [])
-                    .flatMap { $0.names } + [frameworkName])
-                    .compactMap { name in manifest.targets.first { $0.name == name } }
-                headerSearchPaths = allTargets
-                    .flatMap { target -> [(target: Manifest.Target, setting: Manifest.Target.Setting)] in
-                        return (target.settings ?? [])
-                            .map { (target: target, setting: $0) }
-                    }
-                    .filter { $0.setting.name == .headerSearchPath }
-                    .flatMap { (target, setting) -> [(Manifest.Target, String)] in
-                        return setting.value
-                            .map { (target, $0) }
-                    }
-                    .map { target, searchPath -> Path in
-                        if let path = target.path {
-                            return Path(path) + Path(searchPath)
-                        } else {
-                            return Path(searchPath)
-                        }
-                    }
-            }
+            let target: Manifest.Target? = {
+                if case .package(let manifest) = description,
+                   let target = manifest.targets.first(where: { $0.name == frameworkName }) {
+                    return target
+                } else {
+                    return nil
+                }
+            }()
 
-            if swiftModulePath.exists, project == nil, headerSearchPaths.isEmpty {
+            if swiftModulePath.exists, project == nil {
                 // Swift projects
                 try swiftModulePath.copy(modulesPath + "\(frameworkName).swiftmodule")
             }
 
-            if !swiftModulePath.exists || !headerSearchPaths.isEmpty {
+            if !swiftModulePath.exists || target?.settings?.contains(where: { $0.name == .headerSearchPath }) == true {
                 // Objective-C projects
                 let moduleMapDirectory = archiveIntermediatesPath + "IntermediateBuildFilesPath/\(projectName ?? self.name).build/Release-\(sdk.rawValue)/\(frameworkName).build"
-                let moduleMapPath = moduleMapDirectory.glob("*.modulemap").first
+                var moduleMapPath = moduleMapDirectory.glob("*.modulemap").first
                 var moduleMapContent = "module \(frameworkName) { export * }"
 
-                if let moduleMapPath = moduleMapPath, moduleMapPath.exists, headerSearchPaths.isEmpty {
+                // If we can't find the generated modulemap, we check
+                // to see if the package includes its own.
+                if (moduleMapPath == nil || moduleMapPath?.exists == false), case .package(let manifest) = description,
+                   let target = manifest.targets.first(where: { $0.name == frameworkName }),
+                   let path = target.path {
+
+                    moduleMapPath = try Path(path)
+                        .recursiveChildren()
+                        .filter { $0.extension == "modulemap" }
+                        .first
+                }
+
+                if let moduleMapPath = moduleMapPath, moduleMapPath.exists {
                     let umbrellaHeaderRegex = Regex(#"umbrella (?:header )?"(.*)""#)
                     let umbrellaHeaderMatch = umbrellaHeaderRegex.firstMatch(in: try moduleMapPath.read())
 
@@ -368,6 +421,10 @@ public struct Package {
 
                         var umbrellaHeaderPath = Path(umbrellaHeaderPathString)
                         var sourceHeadersDirectory = umbrellaHeaderPath.isFile ? umbrellaHeaderPath.parent() : umbrellaHeaderPath + frameworkName
+
+                        if umbrellaHeaderPath.isDirectory, !sourceHeadersDirectory.exists {
+                            sourceHeadersDirectory = umbrellaHeaderPath
+                        }
 
                         if project != nil {
                             sourceHeadersDirectory = headersPath
@@ -409,7 +466,11 @@ public struct Package {
                                 let targetPath = headersPath + headerPath.lastComponent
 
                                 if !targetPath.exists, headerPath.exists {
-                                    try headerPath.copy(targetPath)
+                                    if headerPath.isSymlink {
+                                        try headerPath.symlinkDestination().copy(targetPath)
+                                    } else {
+                                        try headerPath.copy(targetPath)
+                                    }
                                 }
                             }
 
@@ -443,7 +504,7 @@ public struct Package {
                             } else {
                                 return Path(publicHeadersPath)
                             }
-                        } + headerSearchPaths
+                        }
                     let headers = try headerPaths
                         .flatMap { headerPath -> [Path] in
                             guard headerPath.exists else { return [] }
@@ -494,7 +555,8 @@ public struct Package {
 
         if let urlString = target?.url,
               let url = URL(string: urlString),
-              let checksum = target?.checksum {
+              let checksum = target?.checksum,
+              target?.type == .binary {
 
             return Future<URL, Error> { promise in
                 let task = URLSession
@@ -518,14 +580,21 @@ public struct Package {
                     log.fatal("Checksums for target \(targetName) do not match.")
                 }
 
-                try (destinationPath + ".zip").write(data)
+                let zipPath = self.compressedPath(for: targetName)
 
-                return (destinationPath + ".zip")
+                try zipPath.write(data)
+
+                return zipPath
             }
             .eraseToAnyPublisher()
-        } else if let path = target?.path {
+        } else if let path = target?.path, target?.type == .binary {
             return Future.try { promise in
                 let frameworkPath = self.path + path
+
+                if destinationPath.exists {
+                    try destinationPath.delete()
+                }
+
                 try frameworkPath.copy(destinationPath)
 
                 promise(.success(destinationPath))
@@ -556,9 +625,66 @@ public struct Package {
         }
     }
 
+    internal func download(from url: URL) -> AnyPublisher<[Path], Error> {
+        let targetPath = Config.current.cachePath + Path(url.path).lastComponentWithoutExtension
+        let targetRawPath = Config.current.cachePath + url.lastPathComponent
+
+        return Future<URL, Error> { promise in
+            let task = urlSession
+                .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
+                    if let error = error {
+                        promise(.failure(error))
+                    } else if let url = url {
+                        promise(.success(url))
+                    } else {
+                        log.fatal("Unexpected download result")
+                    }
+                }
+
+            task.resume()
+        }
+        .tryMap { downloadUrl -> [Path] in
+            if targetPath.exists {
+                try targetPath.delete()
+            }
+            if targetRawPath.exists {
+                try targetRawPath.delete()
+            }
+
+            let downloadedPath = Path(downloadUrl.path)
+
+            try downloadedPath.move(targetRawPath)
+
+            switch url.pathExtension {
+            case "zip":
+                try Zip.unzipFile(targetRawPath.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress(percent: $0) })
+            case "":
+                break
+            default:
+                log.fatal("Unsupported package url extension \"\(url.pathExtension)\"")
+            }
+
+            return try targetPath
+                .recursiveChildren()
+                .filter { $0.extension == "xcframework" }
+                .map { framework -> Path in
+                    let targetPath = Config.current.buildPath + framework.lastComponent
+
+                    if targetPath.exists {
+                        try targetPath.delete()
+                    }
+
+                    try framework.move(targetPath)
+
+                    return targetPath
+                }
+        }
+        .eraseToAnyPublisher()
+    }
+
     private func addProduct(_ product: String, targets: [String]? = nil, dynamic: Bool = false, to packageContents: inout String) {
         let allProductMatches = Regex(#"(\.library\([\n\r\s]*name\s?:\s"[A-Za-z]*"[^,]*,[^,]*,)"#).allMatches(in: packageContents)
-        packageContents.insert(contentsOf: "        .library(name: \"\(product)\", \(dynamic ? "type: .dynamic, " : "")targets: [\((targets ?? [product]).map { "\"\($0)\"" }.joined(separator: ", "))]),\n", at: allProductMatches.first!.range.lowerBound)
+        packageContents.insert(contentsOf: ".library(name: \"\(product)\", \(dynamic ? "type: .dynamic, " : "")targets: [\((targets ?? [product]).map { "\"\($0)\"" }.joined(separator: ", "))]),\n", at: allProductMatches.first!.range.lowerBound)
     }
 
     private func getHeaders(in header: Path, frameworkName: String, sourceHeadersDirectory: Path, allHeaders: [Path] = []) throws -> [Path] {
@@ -600,6 +726,7 @@ public extension Package {
         case scheme(String)
         case target(String)
         case project(_ path: Path, scheme: String)
+        case download(URL)
 
         init(_ product: Config.Product) {
             switch product {
@@ -616,11 +743,13 @@ public extension Package {
     enum Description {
         case package(Manifest)
         case project(Project)
+        case url(name: String, url: URL, version: String)
 
         var name: String {
             switch self {
             case .package(let manifest): return manifest.name
             case .project(let project): return project.name
+            case .url(let name, _, _): return name
             }
         }
 
@@ -646,21 +775,6 @@ public extension Package {
             }
         }
 
-        func getProductNames() throws -> [String: [String]] {
-            let package = Config.current.packages?[name]
-
-            switch self {
-            case .package(let manifest):
-                if let products = package?.products {
-                    return products.reduce(into: [:]) { $0[$1.name] = [$1.name] }
-                } else {
-                    return manifest.products.reduce(into: [:]) { $0[$1.name] = [$1.name] }
-                }
-            case .project(let project):
-                return try project.productNames(config: package)
-            }
-        }
-
         func getBuildables() -> [Package.Buildable] {
             if let products = Config.current.packages?[name]?.products {
                 return products.map { .init($0) }
@@ -670,6 +784,8 @@ public extension Package {
                     return [.scheme(manifest.name)]
                 case .project(let project):
                     return [.project(project.path, scheme: project.name)]
+                case .url(_, let url, _):
+                    return [.download(url)]
                 }
             }
         }

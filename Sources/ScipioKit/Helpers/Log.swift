@@ -1,8 +1,13 @@
 import Foundation
 
-public let log = Log.self
+public let log: Log = .shared
 
-public struct Log {
+public final class Log: NSObject {
+
+    public static let shared = Log()
+
+    internal let operationQueue = OperationQueue()
+
     public enum Level {
         case passthrough
         case debug
@@ -37,9 +42,9 @@ public struct Log {
         }
     }
 
-    public static var level: Level = .warning
-    public static var debugLevel: Level = .debug
-    public static var useColors: Bool = true
+    public var level: Level = .warning
+    public var debugLevel: Level = .debug
+    public var useColors: Bool = true
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -47,40 +52,53 @@ public struct Log {
         return formatter
     }()
 
-    public static func debug(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func debug(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .debug, file: file, line: line, column: column, message)
     }
 
-    public static func verbose(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func verbose(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .verbose, file: file, line: line, column: column, message)
     }
 
-    public static func info(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func info(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .info, file: file, line: line, column: column, message)
     }
 
-    public static func success(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func success(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .success, file: file, line: line, column: column, message)
     }
 
-    public static func warning(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func warning(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .warning, file: file, line: line, column: column, message)
     }
 
-    public static func error(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func error(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .error, file: file, line: line, column: column, message)
     }
 
-    public static func passthrough(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func passthrough(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .passthrough, file: file, line: line, column: column, message)
     }
 
-    public static func fatal(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) -> Never {
+    public func progress(file: String = #file, line: Int = #line, column: Int = #column, percent: Double) {
+        let width: Int = 40
+        let message = "\r[" + stride(from: 0, to: width, by: 1)
+            .map { Double($0) / Double(width) > min(percent, 1) ? "-" : "=" }
+            .joined() + "] \(Int((percent * 100).rounded()))%"
+
+        if percent >= 1 {
+            self.log(level: .success, file: file, line: line, column: column, [message])
+        } else {
+            self.log(level: .info, file: file, line: line, column: column, [message])
+        }
+    }
+
+    public func fatal(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) -> Never {
         self.log(level: .error, file: file, line: line, column: column, message)
         exit(EXIT_FAILURE)
     }
 
-    private static var isDebug: Bool {
+    private var isDebug: Bool {
         #if DEBUG
             return true
         #else
@@ -88,11 +106,11 @@ public struct Log {
         #endif
     }
 
-    private static func log(level: Level, file: String = #file, line: Int = #line, column: Int = #column, _ message: [Any]) {
-        if Log.isDebug {
-            guard level.levelValue >= Log.debugLevel.levelValue else { return }
+    private func log(level: Level, file: String = #file, line: Int = #line, column: Int = #column, _ message: [Any]) {
+        if isDebug {
+            guard level.levelValue >= debugLevel.levelValue else { return }
         } else {
-            guard level.levelValue >= Log.level.levelValue else { return }
+            guard level.levelValue >= self.level.levelValue else { return }
         }
 
         let filename = URL(string: file)?.lastPathComponent ?? ""
@@ -102,21 +120,21 @@ public struct Log {
         let defaultMessage = "[\(dateText)]: \(formattedMessage)"
 
         switch level {
-        case .debug where Log.isDebug:
+        case .debug where isDebug:
             if useColors {
                 print("\(debugMessage, color: level.color)")
             } else {
                 print(debugMessage)
             }
         case .passthrough:
-            print(Log.isDebug ? debugMessage : defaultMessage)
+            print(isDebug ? debugMessage : defaultMessage)
         case .debug:
             break
         default:
             if useColors {
-                print("\(Log.isDebug ? debugMessage : defaultMessage, color: level.color)")
+                print("\(isDebug ? debugMessage : defaultMessage, color: level.color)")
             } else {
-                print(Log.isDebug ? debugMessage : defaultMessage)
+                print(isDebug ? debugMessage : defaultMessage)
             }
         }
     }
@@ -141,3 +159,14 @@ public extension DefaultStringInterpolation {
         appendInterpolation("\(color.rawValue)\(value)\(Log.Color.default.rawValue)")
     }
 }
+
+//extension Log: URLSessionDownloadDelegate {
+//    public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+//        progress(percent: Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+//        print("\r")
+//    }
+//
+//    public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+//        progress(percent: 1)
+//    }
+//}
