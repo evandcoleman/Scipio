@@ -80,16 +80,16 @@ public final class Log: NSObject {
         self.log(level: .passthrough, file: file, line: line, column: column, message)
     }
 
-    public func progress(file: String = #file, line: Int = #line, column: Int = #column, percent: Double) {
+    public func progress(file: String = #file, line: Int = #line, column: Int = #column, _ message: String, percent: Double) {
         let width: Int = 40
-        let message = "\r[" + stride(from: 0, to: width, by: 1)
+        let fullMessage = "\(message): [" + stride(from: 0, to: width, by: 1)
             .map { Double($0) / Double(width) > min(percent, 1) ? "-" : "=" }
-            .joined() + "] \(Int((percent * 100).rounded()))%"
+            .joined() + "] \(Int((percent * 100).rounded()))% \r"
 
         if percent >= 1 {
-            self.log(level: .success, file: file, line: line, column: column, [message])
+            self.log(level: .success, file: file, line: line, column: column, [fullMessage])
         } else {
-            self.log(level: .info, file: file, line: line, column: column, [message])
+            self.log(level: .info, file: file, line: line, column: column, [fullMessage])
         }
     }
 
@@ -137,6 +137,8 @@ public final class Log: NSObject {
                 print(isDebug ? debugMessage : defaultMessage)
             }
         }
+
+        fflush(__stdoutp)
     }
 }
 
@@ -159,14 +161,3 @@ public extension DefaultStringInterpolation {
         appendInterpolation("\(color.rawValue)\(value)\(Log.Color.default.rawValue)")
     }
 }
-
-//extension Log: URLSessionDownloadDelegate {
-//    public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-//        progress(percent: Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
-//        print("\r")
-//    }
-//
-//    public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-//        progress(percent: 1)
-//    }
-//}

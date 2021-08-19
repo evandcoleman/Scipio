@@ -49,6 +49,7 @@ public struct Config: Decodable, Equatable {
         current.buildDirectory = buildDirectory
     }
 
+    @discardableResult
     public static func readConfig(from path: Path = Path.current + "scipio.yml") -> Config {
         guard path.exists else { log.fatal("Couldn't find config file at path: \(path.string)") }
 

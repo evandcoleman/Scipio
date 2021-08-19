@@ -118,13 +118,9 @@ public struct Package {
                 let frameworkPath = self.artifactPath(for: product)
                 let zipPath = self.compressedPath(for: product)
 
-                if frameworkPath.exists {
-                    if zipPath.exists {
-                        try zipPath.delete()
-                    }
-                    
+                if frameworkPath.exists, !zipPath.exists {
                     do {
-                        try Zip.zipFiles(paths: [frameworkPath.url], zipFilePath: zipPath.url, password: nil, progress: nil)
+                        try Zip.zipFiles(paths: [frameworkPath.url], zipFilePath: zipPath.url, password: nil, progress: { log.progress("Compressing \(frameworkPath.lastComponent)", percent: $0) })
                     } catch ZipError.zipFail {
                         throw UploadError.zipFailed(product: product, path: frameworkPath)
                     }
@@ -223,7 +219,7 @@ public struct Package {
 
                     return self.download(from: url)
                         .tryMap { paths in
-                            let result = [name: paths.map(\.lastComponentWithoutExtension)]
+                            let result = [name: paths.map(\.lastComponentWithoutExtension).uniqued()]
                             let data = try JSONSerialization.data(withJSONObject: result, options: [])
                             try cachedProductNamesPath.write(data)
 
@@ -631,7 +627,7 @@ public struct Package {
 
         return Future<URL, Error> { promise in
             let task = urlSession
-                .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
+                .downloadTask(with: url, progressHandler: { log.progress("Downloading \(url.lastPathComponent)", percent: $0) }) { url, response, error in
                     if let error = error {
                         promise(.failure(error))
                     } else if let url = url {
@@ -657,7 +653,7 @@ public struct Package {
 
             switch url.pathExtension {
             case "zip":
-                try Zip.unzipFile(targetRawPath.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress(percent: $0) })
+                try Zip.unzipFile(targetRawPath.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress("Decompressing \(targetRawPath.lastComponent)", percent: $0) })
             case "":
                 break
             default:
