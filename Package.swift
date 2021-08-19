@@ -12,6 +12,7 @@ let package = Package(
         .executable(name: "Scipio", targets: ["Scipio"])
     ],
     dependencies: [
+        .package(name: "Gzip", url: "https://github.com/1024jp/GzipSwift", from: "5.1.1"),
         .package(url: "https://github.com/kylef/PathKit", from: "1.0.0"),
         .package(url: "https://github.com/sharplet/Regex", from: "2.1.1"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "0.4.4"),
@@ -31,6 +32,7 @@ let package = Package(
         .target(
             name: "ScipioKit",
             dependencies: [
+                .product(name: "Gzip", package: "Gzip"),
                 "PathKit",
                 "Regex",
                 .product(name: "XcbeautifyLib", package: "xcbeautify"),

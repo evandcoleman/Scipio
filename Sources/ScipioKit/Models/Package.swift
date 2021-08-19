@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Gzip
 import PathKit
 import Regex
 import Zip
@@ -658,6 +659,18 @@ public struct Package {
             switch url.pathExtension {
             case "zip":
                 try Zip.unzipFile(targetRawPath.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress("Decompressing \(targetRawPath.lastComponent)", percent: $0) })
+            case "gz":
+                let gunzippedPath = try targetRawPath.gunzipped()
+
+                if gunzippedPath.extension == "tar" {
+                    let untaredPath = try gunzippedPath.untar(progress: { log.progress("Untaring \(gunzippedPath.lastComponent)", percent: $0) })
+                    
+                    if !targetPath.exists {
+                        try untaredPath.move(targetPath)
+                    }
+                } else {
+                    try gunzippedPath.move(targetPath)
+                }
             case "":
                 break
             default:
