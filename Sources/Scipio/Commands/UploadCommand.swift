@@ -51,6 +51,7 @@ extension Command {
 
 extension Command.Upload {
     struct Options: ParsableArguments {
-        
+        @Flag(help: "If true will force uploading dependencies")
+        var forceUpload: Bool = false
     }
 }

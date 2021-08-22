@@ -4,7 +4,7 @@ import PathKit
 import XcodeProj
 import Zip
 
-public struct Project {
+public struct LegacyProject {
 
     public let path: Path
 
@@ -68,7 +68,7 @@ public struct Project {
             promise(.success(workspaceState.object.dependencies))
         }
         .flatMap { $0.publisher }
-        .tryMap { try Package(path: clonedSourcePackageDirectory + "checkouts" + Path($0.subpath)) }
+        .tryMap { try Package(path: clonedSourcePackageDirectory + "checkouts" + Path($0.subpath), name: $0.packageRef.name) }
         .eraseToAnyPublisher()
 
         let projectReferences = ((try xcodeproj
@@ -77,7 +77,7 @@ public struct Project {
             .projects ?? [])
             .publisher
             .flatMap { $0.values.compactMap(\.path).publisher }
-            .tryMap { try Package(path: Config.current.directory + $0) }
+            .tryMap { try Package(path: Config.current.directory + $0, name: $0) }
             .eraseToAnyPublisher()
 
         let urlPackages = Future<[Package], Error>.try { promise in
@@ -89,10 +89,20 @@ public struct Project {
         .flatMap { $0.publisher }
         .eraseToAnyPublisher()
 
+        let cocoaPodPackages = Future<[Package], Error>.try { promise in
+            let packages = try (Config.current.packages ?? [:])
+                .filter { $0.value.cocoapod != nil }
+                .map { try Package(path: Config.current.cachePath + "Pods" + $0.key, name: $0.key, package: $0.value) }
+            promise(.success(packages))
+        }
+        .flatMap { $0.publisher }
+        .eraseToAnyPublisher()
+
         return Publishers.MergeMany(
             packages,
             projectReferences,
-            urlPackages
+            urlPackages,
+            cocoaPodPackages
         )
         .collect()
         .map { $0.sorted { $0.name < $1.name } }
@@ -201,6 +211,29 @@ public struct Project {
                             .map { _ in () }
                             .eraseToAnyPublisher()
                     }
+                case .cocoapod(let name):
+//                    let shouldBuild = force || productsToBuild.contains { productNames[name]?.contains($0) ?? false }
+//
+//                    guard shouldBuild else {
+//                        log.info("⏭ Skipping scheme \(scheme)")
+//                        return result
+//                    }
+
+                    for sdk in sdks {
+                        try package.build(
+                            "\(name)Wrapper",
+                            workspace: (package.path + "\(name).xcworkspace").string,
+                            for: sdk,
+                            derivedDataPath: derivedDataPath
+                        )
+                    }
+                    try package.createXCFramework(
+                        scheme: "\(name)Wrapper",
+                        products: productsToBuild,
+                        sdks: sdks,
+                        skipIfExists: skipClean,
+                        force: force
+                    )
                 }
 
                 return result
@@ -211,68 +244,3 @@ public struct Project {
     }
 }
 
-extension Project {
-    struct WorkspaceState: Decodable {
-        let object: Object
-    }
-}
-
-extension Project.WorkspaceState {
-    // MARK: - Object
-    struct Object: Codable {
-        let artifacts: [Artifact]
-        let dependencies: [Dependency]
-    }
-
-    // MARK: - Artifact
-    struct Artifact: Codable {
-        let packageRef: PackageRef
-        let source: Source
-        let targetName: String
-    }
-
-    // MARK: - PackageRef
-    struct PackageRef: Codable {
-        let identity: String
-        let kind: Kind
-        let name: String
-        let path: String
-    }
-
-    enum Kind: String, Codable {
-        case local
-        case remote
-    }
-
-    // MARK: - Source
-    struct Source: Codable {
-        let path: String?
-        let type: Kind
-        let checksum, subpath: String?
-        let url: String?
-    }
-
-    // MARK: - Dependency
-    struct Dependency: Codable {
-        let packageRef: PackageRef
-        let state: State
-        let subpath: String
-    }
-
-    // MARK: - State
-    struct State: Codable {
-        let checkoutState: CheckoutState
-        let name: Name
-    }
-
-    // MARK: - CheckoutState
-    struct CheckoutState: Codable {
-        let branch: String?
-        let revision: String
-        let version: String?
-    }
-
-    enum Name: String, Codable {
-        case checkout
-    }
-}

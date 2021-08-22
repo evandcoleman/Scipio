@@ -4,8 +4,10 @@ import XcbeautifyLib
 
 public struct Xcodebuild {
     var command: Command
+    var workspace: String?
     var project: String?
     var scheme: String?
+    var target: String?
     var archivePath: String?
     var derivedDataPath: String?
     var clonedSourcePackageDirectory: String?
@@ -17,8 +19,10 @@ public struct Xcodebuild {
 
     init(
         command: Command,
+        workspace: String? = nil,
         project: String? = nil,
         scheme: String? = nil,
+        target: String? = nil,
         archivePath: String? = nil,
         derivedDataPath: String? = nil,
         clonedSourcePackageDirectory: String? = nil,
@@ -29,8 +33,10 @@ public struct Xcodebuild {
         additionalBuildSettings: [String: String] = [:]
     ) {
         self.command = command
+        self.workspace = workspace
         self.project = project
         self.scheme = scheme
+        self.target = target
         self.archivePath = archivePath
         self.derivedDataPath = derivedDataPath
         self.clonedSourcePackageDirectory = clonedSourcePackageDirectory
@@ -75,11 +81,17 @@ public struct Xcodebuild {
             args.append("-create-xcframework")
         }
 
+        if let workspace = workspace {
+            args.append(contentsOf: ["-workspace", workspace])
+        }
         if let project = project {
             args.append(contentsOf: ["-project", project])
         }
         if let scheme = scheme {
             args.append(contentsOf: ["-scheme", scheme])
+        }
+        if let target = target {
+            args.append(contentsOf: ["-target", target])
         }
         if let archivePath = archivePath {
             args.append(contentsOf: ["-archivePath", archivePath])
@@ -117,5 +129,6 @@ public extension Xcodebuild {
     enum SDK: String {
         case iphoneos
         case iphonesimulator
+        case macos
     }
 }

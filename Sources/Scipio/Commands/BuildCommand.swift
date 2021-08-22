@@ -67,5 +67,7 @@ extension Command.Build {
         var skipClean: Bool = false
         @Flag(help: "If true will skip resolving dependencies")
         var skipResolveDependencies: Bool = false
+        @Flag(help: "If true will force building dependencies")
+        var forceBuild: Bool = false
     }
 }

@@ -54,7 +54,7 @@ extension Command.Main {
         @Option(help: "Path to store and find build artifacts")
         var buildPath: String?
 
-        @Flag(help: "If true will build packages that are already uploaded")
+        @Flag(help: "If true will force build and upload packages")
         var force: Bool = false
 
         var logLevel: Log.Level {
