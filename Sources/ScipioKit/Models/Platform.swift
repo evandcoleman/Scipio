@@ -7,7 +7,7 @@ public enum Platform: String {
     public var sdks: [Xcodebuild.SDK] {
         switch self {
         case .iOS:
-            return [.iphoneos, .iphoneos]
+            return [.iphoneos, .iphonesimulator]
         case .macOS:
             return [.macos]
         }
@@ -22,5 +22,24 @@ public enum Platform: String {
         default:
             return nil
         }
+    }
+
+    public func asPackagePlatformString(version: String) -> String {
+        return ".\(packagePlatformRawValue)(.v\(version.components(separatedBy: ".0").dropLast().joined().replacingOccurrences(of: ".", with: "_")))"
+    }
+
+    private var packagePlatformRawValue: String {
+        switch self {
+        case .iOS:
+            return "iOS"
+        case .macOS:
+            return "macOS"
+        }
+    }
+}
+
+extension Sequence where Element == Platform {
+    public var sdks: [Xcodebuild.SDK] {
+        return flatMap(\.sdks)
     }
 }

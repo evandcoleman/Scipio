@@ -5,6 +5,8 @@ import PathKit
 struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
     let path: String
 
+    var requiresCompression: Bool { false }
+
     enum LocalCacheEngineError: Error {
         case fileNotFound
     }
@@ -19,35 +21,39 @@ struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
             .eraseToAnyPublisher()
     }
 
-    func put(product: String, version: String, path: Path) -> AnyPublisher<(), Error> {
-        let cachePath = localPath(for: product, version: version)
+    func put(artifact: Artifact) -> AnyPublisher<CachedArtifact, Error> {
+        let cachePath = localPath(for: artifact.name, version: artifact.version)
 
         return Just(cachePath)
-            .tryMap { cachePath -> Void in
+            .tryMap { cachePath -> CachedArtifact in
                 if cachePath.exists {
                     try cachePath.delete()
                 }
 
                 if !cachePath.parent().exists {
-                    try cachePath.parent().mkdir()
+                    try cachePath.parent().mkpath()
                 }
 
-                try path.copy(cachePath)
+                try artifact.path.copy(cachePath)
 
-                return ()
+                return CachedArtifact(name: artifact.name, url: cachePath.url)
             }
             .eraseToAnyPublisher()
     }
 
-    func get(product: String, version: String, destination: Path) -> AnyPublisher<Path, Error> {
+    func get(product: String, version: String, destination: Path) -> AnyPublisher<Artifact, Error> {
         let cachePath = localPath(for: product, version: version)
 
         return Just(cachePath)
-            .tryMap { cachePath -> Path in
+            .tryMap { cachePath -> Artifact in
                 if cachePath.exists {
                     try cachePath.copy(destination)
 
-                    return destination
+                    return Artifact(
+                        name: product,
+                        version: version,
+                        path: destination
+                    )
                 } else {
                     throw LocalCacheEngineError.fileNotFound
                 }
@@ -56,6 +62,6 @@ struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
     }
 
     private func localPath(for product: String, version: String) -> Path {
-        return Path(path) + product + "/\(product)-\(version).xcframework.zip"
+        return Path(path).normalize() + product + "\(product)-\(version).xcframework"
     }
 }

@@ -3,10 +3,10 @@ import Foundation
 import PathKit
 import Zip
 
-public struct BinaryProcessor: DependencyProcessor {
+public final class BinaryProcessor: DependencyProcessor {
 
-    let dependencies: [BinaryDependency]
-    let options: ProcessorOptions
+    public let dependencies: [BinaryDependency]
+    public let options: ProcessorOptions
 
     private let urlSession: URLSession = .createWithExtensionsSupport()
 
@@ -15,11 +15,16 @@ public struct BinaryProcessor: DependencyProcessor {
         self.options = options
     }
 
-    public func process() -> AnyPublisher<[Path], Error> {
-        return dependencies
-            .publisher
+    public func preProcess() -> AnyPublisher<[BinaryDependency], Error> {
+        return Just(dependencies)
             .setFailureType(to: Error.self)
-            .tryFlatMap { dependency -> AnyPublisher<Path, Error> in
+            .eraseToAnyPublisher()
+    }
+
+    public func process(_ dependency: BinaryDependency, resolvedTo resolvedDependency: BinaryDependency) -> AnyPublisher<[Artifact], Error> {
+        return Just(dependency)
+            .setFailureType(to: Error.self)
+            .tryFlatMap { dependency -> AnyPublisher<(BinaryDependency, Path), Error> in
                 let downloadPath = Config.current.cachePath + dependency.url.lastPathComponent
                 let checksumCache = Config.current.cachePath + ".binary-\(dependency.name)-\(dependency.version)"
 
@@ -28,13 +33,21 @@ public struct BinaryProcessor: DependencyProcessor {
 
                     return Just(downloadPath)
                         .setFailureType(to: Error.self)
+                        .tryMap { path in
+                            return try self.decompress(dependency: dependency, at: path)
+                        }
+                        .map { (dependency, $0) }
                         .eraseToAnyPublisher()
                 } else {
                     if downloadPath.exists {
                         try downloadPath.delete()
                     }
 
-                    return download(dependency: dependency)
+                    return self.download(dependency: dependency)
+                        .tryMap { path in
+                            return try self.decompress(dependency: dependency, at: path)
+                        }
+                        .map { (dependency, $0) }
                         .handleEvents(receiveOutput: { _ in
                             do {
                                 try checksumCache.write(try downloadPath.checksum(.sha256))
@@ -45,24 +58,40 @@ public struct BinaryProcessor: DependencyProcessor {
                         .eraseToAnyPublisher()
                 }
             }
-            .tryMap { path -> [Path] in
+            .tryMap { dependency, path -> [Artifact] in
                 return try path
                     .recursiveChildren()
                     .filter { $0.extension == "xcframework" }
-                    .map { framework -> Path in
+                    .compactMap { framework -> Artifact? in
                         let targetPath = Config.current.buildPath + framework.lastComponent
 
                         if targetPath.exists {
                             try targetPath.delete()
                         }
 
+                        if let excludes = dependency.excludes,
+                           excludes.contains(framework.lastComponentWithoutExtension) {
+
+                            return nil
+                        }
+
                         try framework.move(targetPath)
 
-                        return targetPath
+                        return Artifact(
+                            name: targetPath.lastComponentWithoutExtension,
+                            version: dependency.version,
+                            path: targetPath
+                        )
                     }
             }
             .collect()
             .map { $0.flatMap { $0 } }
+            .eraseToAnyPublisher()
+    }
+
+    public func postProcess() -> AnyPublisher<(), Error> {
+        return Just(())
+            .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
@@ -72,7 +101,7 @@ public struct BinaryProcessor: DependencyProcessor {
         let targetRawPath = Config.current.cachePath + url.lastPathComponent
 
         return Future<URL, Error> { promise in
-            let task = urlSession
+            let task = self.urlSession
                 .downloadTask(with: url, progressHandler: { log.progress("Downloading \(url.lastPathComponent)", percent: $0) }) { url, response, error in
                     if let error = error {
                         promise(.failure(error))

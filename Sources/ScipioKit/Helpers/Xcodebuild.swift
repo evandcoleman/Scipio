@@ -47,13 +47,13 @@ public struct Xcodebuild {
         self.additionalBuildSettings = additionalBuildSettings
     }
 
-    func run() {
+    func run() throws {
         let parser = Parser()
         let output = OutputHandler(quiet: false, quieter: false, isCI: false, { log.passthrough($0) })
 
         let command = buildCommand()
         log.verbose(command)
-        sh(command)
+        try sh(command)
             .onReadLine { line in
                 if log.level.levelValue <= Log.Level.verbose.levelValue {
                     log.verbose(line)

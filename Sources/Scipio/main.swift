@@ -1,4 +1,5 @@
 import ArgumentParser
+import PathKit
 import ScipioKit
 
 enum Command {}
@@ -22,11 +23,27 @@ extension Command {
     @OptionGroup var uploadOptions: Upload.Options
 
     func run() throws {
-        let build = Build(options: _options, buildOptions: _buildOptions)
-        let upload = Upload(options: _options, uploadOptions: _uploadOptions)
+        log.useColors = !options.noColors
+        log.level = options.logLevel
 
-        try build.run()
-        try upload.run()
+        if let path = options.config {
+            Config.setPath(Path(path), buildDirectory: options.buildPath)
+        } else {
+            Config.readConfig()
+        }
+
+        let artifacts = try Runner.build(
+            dependencies: options.packages,
+            platforms: buildOptions.platform,
+            force: options.force || buildOptions.forceBuild
+        )
+
+        let cachedArtifacts = try Runner.upload(
+            artifacts: artifacts,
+            force: options.force || uploadOptions.forceUpload
+        )
+
+        try Runner.updatePackageManifest(at: Config.current.directory, with: cachedArtifacts)
     }
   }
 }
@@ -45,10 +62,7 @@ extension Command.Main {
         @Option(help: "Path to a config file")
         var config: String?
 
-        @Option(help: "Path to the Xcode project containing package dependencies")
-        var project: String?
-        
-        @Argument(help: "An array of packages or products to build", transform: { $0.components(separatedBy: ",") })
+        @Argument(help: "An array of dependencies to process", transform: { $0.components(separatedBy: ",") })
         var packages: [String]?
 
         @Option(help: "Path to store and find build artifacts")

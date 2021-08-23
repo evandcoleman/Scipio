@@ -5,11 +5,13 @@ public protocol Dependency: Decodable, Equatable {
     var name: String { get }
 }
 
-public struct BinaryDependency: Dependency {
+public struct BinaryDependency: Dependency, DependencyProducts {
     public let name: String
     public let url: URL
     public let version: String
-    public let excludes: [String]
+    public let excludes: [String]?
+
+    public var productNames: [String]? { nil }
 }
 
 public struct CocoaPodDependency: Dependency {

@@ -6,76 +6,94 @@ import Regex
 import Version
 import XcodeGenKit
 
-public struct PackageProcessor: DependencyProcessor {
+public final class PackageProcessor: DependencyProcessor {
 
-    let dependencies: [PackageDependency]
-    let options: ProcessorOptions
+    public let dependencies: [PackageDependency]
+    public let options: ProcessorOptions
+
+    private var derivedDataPath: Path {
+        return Config.current.cachePath + "DerivedData" + Config.current.name
+    }
 
     public init(dependencies: [PackageDependency], options: ProcessorOptions) {
         self.dependencies = dependencies
         self.options = options
     }
-    
-    public func process() -> AnyPublisher<[Path], Error> {
-        return Future.try { promise in
-            let projectPath = try writeProject()
-            let derivedDataPath = Config.current.cachePath + "DerivedData" + Config.current.name
 
-            if !derivedDataPath.exists {
-                try derivedDataPath.mkpath()
+    public func preProcess() -> AnyPublisher<[SwiftPackageDescriptor], Error> {
+        return Future.try { promise in
+            let projectPath = try self.writeProject()
+
+            if !self.derivedDataPath.exists {
+                try self.derivedDataPath.mkpath()
             }
 
-            resolvePackageDependencies(in: projectPath, derivedDataPath: derivedDataPath)
+            try self.resolvePackageDependencies(in: projectPath, derivedDataPath: self.derivedDataPath)
 
-            let packages = try readPackages(derivedDataPath: derivedDataPath)
-            var xcFrameworks: [Path] = []
+            let packages = try self.readPackages(derivedDataPath: self.derivedDataPath)
 
-            for package in packages {
-                let path = try setupWorkingPath(for: package)
-                try preBuild(path: path)
+            promise(.success(packages))
+        }
+        .eraseToAnyPublisher()
+    }
 
-                for product in package.productNames {
-                    forceDynamicFrameworkProduct(scheme: product, in: path)
+    public func process(_ dependency: PackageDependency, resolvedTo resolvedDependency: SwiftPackageDescriptor) -> AnyPublisher<[Artifact], Error> {
+        return Future.try { promise in
+            let path = try self.setupWorkingPath(for: resolvedDependency)
+            try self.preBuild(path: path)
+            var xcFrameworks: [Artifact] = []
 
-                    for sdk in options.platform.sdks {
-                        let archivePath = try Xcode.archive(
-                            scheme: product,
-                            in: path,
-                            for: sdk,
-                            derivedDataPath: derivedDataPath
-                        )
+            for product in resolvedDependency.productNames ?? [] {
+                try self.forceDynamicFrameworkProduct(scheme: product, in: path)
 
-                        try copyModulesAndHeaders(
-                            package: package,
-                            scheme: product,
-                            sdk: sdk,
-                            archivePath: archivePath,
-                            derivedDataPath: derivedDataPath
-                        )
-                    }
-
-                    xcFrameworks.append(contentsOf: try Xcode.createXCFramework(
+                let archivePaths = try self.options.platforms.sdks.map { sdk -> Path in
+                    let archivePath = try Xcode.archive(
                         scheme: product,
-                        path: path,
-                        sdks: options.platform.sdks,
-                        force: options.forceBuild,
-                        skipClean: options.skipClean
-                    ))
+                        in: path,
+                        for: sdk,
+                        derivedDataPath: self.derivedDataPath
+                    )
+
+                    try self.copyModulesAndHeaders(
+                        package: resolvedDependency,
+                        scheme: product,
+                        sdk: sdk,
+                        archivePath: archivePath,
+                        derivedDataPath: self.derivedDataPath
+                    )
+
+                    return archivePath
                 }
 
-                try postBuild(path: path)
+                xcFrameworks <<< try Xcode.createXCFramework(
+                    archivePaths: archivePaths
+                ).map { path in
+                    return Artifact(
+                        name: path.lastComponentWithoutExtension,
+                        version: resolvedDependency.version,
+                        path: path
+                    )
+                }
             }
+
+            try self.postBuild(path: path)
 
             promise(.success(xcFrameworks))
         }
         .eraseToAnyPublisher()
     }
 
+    public func postProcess() -> AnyPublisher<(), Error> {
+        return Just(())
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
     private func writeProject() throws -> Path {
         let projectName = "Packages.xcodeproj"
         let projectPath = Config.current.cachePath + Config.current.name + projectName
 
-        if !options.skipClean, projectPath.exists {
+        if projectPath.exists {
             try projectPath.delete()
         }
         if !projectPath.parent().exists {
@@ -88,10 +106,10 @@ public struct PackageProcessor: DependencyProcessor {
             packages: dependencies.reduce(into: [:]) { $0[$1.name] = .remote(url: $1.url.absoluteString, versionRequirement: $1.versionRequirement) },
             options: .init(
                 deploymentTarget: .init(
-                    iOS: Version(Config.current.deploymentTarget?["iOS"] ?? ""),
-                    tvOS: Version(Config.current.deploymentTarget?["tvOS"] ?? ""),
-                    watchOS: Version(Config.current.deploymentTarget?["watchOS"] ?? ""),
-                    macOS: Version(Config.current.deploymentTarget?["macOS"] ?? "")
+                    iOS: Version(Config.current.deploymentTarget["iOS"] ?? ""),
+                    tvOS: Version(Config.current.deploymentTarget["tvOS"] ?? ""),
+                    watchOS: Version(Config.current.deploymentTarget["watchOS"] ?? ""),
+                    macOS: Version(Config.current.deploymentTarget["macOS"] ?? "")
                 )
             ))
         let projectGenerator = ProjectGenerator(project: projectSpec)
@@ -101,17 +119,21 @@ public struct PackageProcessor: DependencyProcessor {
         return projectPath
     }
 
-    private func resolvePackageDependencies(in project: Path, derivedDataPath: Path) {
+    private func resolvePackageDependencies(in project: Path, derivedDataPath: Path) throws {
+        log.info("📦 Resolving dependencies...")
+
         let command = Xcodebuild(
             command: .resolvePackageDependencies,
             project: project.string,
-            derivedDataPath: derivedDataPath.string
+            clonedSourcePackageDirectory: (derivedDataPath + "SourcePackages").string
         )
 
-        command.run()
+        try command.run()
     }
 
     private func readPackages(derivedDataPath: Path) throws -> [SwiftPackageDescriptor] {
+        log.info("🧮 Loading Swift packages...")
+
         let decoder = JSONDecoder()
         let workspacePath = derivedDataPath + "SourcePackages" + "workspace-state.json"
         let workspaceState = try decoder.decode(WorkspaceState.self, from: try workspacePath.read())
@@ -149,16 +171,16 @@ public struct PackageProcessor: DependencyProcessor {
         try path.delete()
     }
 
-    private func forceDynamicFrameworkProduct(scheme: String, in path: Path) {
+    private func forceDynamicFrameworkProduct(scheme: String, in path: Path) throws {
         precondition(path.exists, "You must call preBuild() before calling this function")
 
-        path.chdir {
+        try path.chdir {
             // We need to rewrite Package.swift to force build a dynamic framework
             // https://forums.swift.org/t/how-to-build-swift-package-as-xcframework/41414/4
             // TODO: This should be rewritten using the Regex library
-            sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g' Package.swift"#).logOutput().waitUntilExit()
-            sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g' Package.swift"#).logOutput().waitUntilExit()
-            sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g' Package.swift"#).logOutput().waitUntilExit()
+            try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g' Package.swift"#).logOutput().waitUntilExit()
+            try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g' Package.swift"#).logOutput().waitUntilExit()
+            try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g' Package.swift"#).logOutput().waitUntilExit()
         }
     }
 
@@ -358,61 +380,6 @@ public struct PackageProcessor: DependencyProcessor {
     }
 }
 
-// MARK: - SwiftPackageDescriptor
-private struct SwiftPackageDescriptor {
-
-    let name: String
-    let version: String
-    let path: Path
-    let manifest: PackageManifest
-
-    var productNames: [String] {
-        return manifest.products.map(\.name)
-    }
-
-    init(path: Path, name: String) throws {
-        self.name = name
-        self.path = path
-
-        var gitPath = path + ".git"
-
-        guard gitPath.exists else {
-            log.fatal("Missing git directory for package: \(name)")
-        }
-
-        if gitPath.isFile {
-            guard let actualPath = (try gitPath.read()).components(separatedBy: "gitdir: ").last?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-                log.fatal("Couldn't parse .git file in \(path)")
-            }
-
-            gitPath = (gitPath.parent() + Path(actualPath)).normalize()
-        }
-
-        let headPath = gitPath + "HEAD"
-
-        guard headPath.exists else {
-            log.fatal("Missing HEAD file in \(gitPath)")
-        }
-
-        self.version = (try headPath.read())
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let cachedManifestPath = Config.current.cachePath + "\(path.lastComponent)-\(try path.glob("Package.swift")[0].checksum(.sha256)).json"
-        let data: Data
-        if cachedManifestPath.exists {
-            log.verbose("Loading cached Package.swift for \(path.lastComponent)")
-            data = try cachedManifestPath.read()
-        } else {
-            log.verbose("Reading Package.swift for \(path.lastComponent)")
-            data = sh("swift package dump-package --package-path \(path.string)")
-                .waitForOutput()
-            try cachedManifestPath.write(data)
-        }
-        let decoder = JSONDecoder()
-        self.manifest = try decoder.decode(PackageManifest.self, from: data)
-    }
-}
-
 // MARK: - WorkspaceState
 private struct WorkspaceState: Decodable {
     let object: Object
@@ -468,101 +435,5 @@ extension WorkspaceState {
                 let url: String?
             }
         }
-    }
-}
-
-// MARK: - PackageManifest
-private struct PackageManifest: Codable {
-    let name: String
-    let products: [Product]
-    let targets: [Target]
-}
-
-extension PackageManifest {
-
-    struct Product: Codable {
-        let name: String
-        let targets: [String]
-    }
-
-    struct Target: Codable {
-        let dependencies: [TargetDependency]
-        let name: String
-        let path: String?
-        let publicHeadersPath: String?
-        let type: TargetType
-        let checksum: String?
-        let url: String?
-        let settings: [Setting]?
-
-        struct Setting: Codable {
-            let name: Name
-            let value: [String]
-
-            enum Name: String, Codable {
-                case define
-                case headerSearchPath
-                case linkedFramework
-                case linkedLibrary
-            }
-        }
-    }
-
-    struct TargetDependency: Codable {
-        let byName: [Dependency?]?
-        let product: [Dependency?]?
-        let target: [Dependency?]?
-
-        var names: [String] {
-            return [byName, product, target]
-                .compactMap { $0 }
-                .flatMap { $0 }
-                .compactMap { dependency in
-                    switch dependency {
-                    case .name(let name):
-                        return name
-                    default:
-                        return nil
-                    }
-                }
-        }
-
-        enum Dependency: Codable {
-            case name(String)
-            case constraint(platforms: [String])
-
-            enum CodingKeys: String, CodingKey {
-                case platformNames
-            }
-
-            init(from decoder: Decoder) throws {
-                if let container = try? decoder.singleValueContainer(),
-                   let stringValue = try? container.decode(String.self) {
-
-                    self = .name(stringValue)
-                } else {
-                    let container = try decoder.container(keyedBy: CodingKeys.self)
-
-                    self = .constraint(platforms: try container.decode([String].self, forKey: .platformNames))
-                }
-            }
-
-            func encode(to encoder: Encoder) throws {
-                switch self {
-                case .name(let name):
-                    var container = encoder.singleValueContainer()
-                    try container.encode(name)
-                case .constraint(let platforms):
-                    var container = encoder.container(keyedBy: CodingKeys.self)
-                    try container.encode(platforms, forKey: .platformNames)
-                }
-            }
-        }
-    }
-
-    enum TargetType: String, Codable {
-        case binary = "binary"
-        case regular = "regular"
-        case test = "test"
     }
 }

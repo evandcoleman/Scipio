@@ -24,49 +24,20 @@ extension Command {
                 Config.readConfig()
             }
 
-            guard let projectPath = options.project ?? Config.current.directory.glob("*.xcodeproj").first?.string else {
-                log.fatal("No project specified and couldn't find one in the current directory.")
-            }
-
-            let project = try Project(path: Path(projectPath))
-
-            if !buildOptions.skipClean {
-                try project.cleanBuildDirectory()
-            }
-
-            if !buildOptions.skipResolveDependencies {
-                log.info("📦 Resolving dependencies...")
-                project.resolvePackageDependencies(quiet: options.quiet, colors: !options.noColors)
-            }
-
-            log.info("🧮 Loading dependencies...")
-            let packages = try project.getPackages().wait() ?? []
-            let buildOnlyPackageNames = options.packages ?? packages.map(\.name)
-            Upload.packages = packages
-
-            for package in packages where buildOnlyPackageNames.contains(package.name) {
-                try project.build(
-                    package: package,
-                    for: buildOptions.sdks,
-                    skipClean: buildOptions.skipClean,
-                    quiet: options.quiet,
-                    colors: !options.noColors,
-                    force: options.force
-                ).wait()
-            }
+            _ = try Runner.build(
+                dependencies: options.packages,
+                platforms: buildOptions.platform,
+                force: options.force || buildOptions.forceBuild
+            )
         }
     }
 }
 
 extension Command.Build {
     struct Options: ParsableArguments {
-        @Option(help: "An array of SDKs to build for", transform: { $0.components(separatedBy: ",").compactMap { Xcodebuild.SDK(rawValue: $0) } })
-        var sdks: [Xcodebuild.SDK]
+        @Option(help: "The platforms to build for", transform: { $0.components(separatedBy: ",").compactMap { Platform(rawValue: $0) } })
+        var platform: [Platform]
 
-        @Flag(help: "If true will skip building dependencies that are already built")
-        var skipClean: Bool = false
-        @Flag(help: "If true will skip resolving dependencies")
-        var skipResolveDependencies: Bool = false
         @Flag(help: "If true will force building dependencies")
         var forceBuild: Bool = false
     }

@@ -26,16 +26,16 @@ struct ShellCommand {
         task.launch()
     }
 
-    func waitForOutput() -> Data {
+    func waitForOutput() throws -> Data {
         var output = ""
         onReadLine(pipe: outputPipe) { output += $0 }
-        waitUntilExit()
+        try waitUntilExit()
 
         return output.data(using: .utf8)!
     }
 
-    func waitForOutputString() -> String {
-        return String(data: waitForOutput(), encoding: .utf8) ?? ""
+    func waitForOutputString() throws -> String {
+        return String(data: try waitForOutput(), encoding: .utf8) ?? ""
     }
 
     @discardableResult
@@ -61,13 +61,11 @@ struct ShellCommand {
         onReadLine { log.verbose($0) }
     }
 
-    func waitUntilExit() {
+    func waitUntilExit() throws {
         task.waitUntilExit()
 
         if task.terminationStatus > 0 {
-            log.error(String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "Command failed")
-
-            exit(task.terminationStatus)
+            throw ScipioError.commandFailed(command: command, status: Int(task.terminationStatus), output: String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
         }
     }
 }

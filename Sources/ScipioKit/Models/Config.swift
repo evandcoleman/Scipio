@@ -6,14 +6,14 @@ public struct Config: Decodable, Equatable {
 
     public private(set) static var current: Config!
 
-    let name: String
-    let cache: CacheEngineDescriptor
-    let binaries: [BinaryDependency]?
-    let packages: [PackageDependency]?
-    let pods: [CocoaPodDependency]?
+    public let name: String
+    public let cacheDelegator: CacheEngineDelegator
+    public let binaries: [BinaryDependency]?
+    public let packages: [PackageDependency]?
+    public let pods: [CocoaPodDependency]?
 
     public var buildDirectory: String?
-    public let deploymentTarget: [String: String]?
+    public let deploymentTarget: [String: String]
 
     public var path: Path { _path }
     public var directory: Path { _path.parent() }
@@ -24,6 +24,17 @@ public struct Config: Decodable, Equatable {
         } else {
             return Path.current + "build"
         }
+    }
+
+    public var platformVersions: [Platform: String] {
+        return deploymentTarget
+            .reduce(into: [:]) { acc, next in
+                if let platform = Platform(rawValue: next.key) {
+                    acc[platform] = next.value
+                } else {
+                    log.fatal("Invalid platform \"\(next.key)\"")
+                }
+            }
     }
 
     public let cachePath: Path = {
@@ -40,7 +51,7 @@ public struct Config: Decodable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case name
-        case cache
+        case cacheDelegator = "cache"
         case binaries
         case packages
         case pods
@@ -69,56 +80,6 @@ public struct Config: Decodable, Equatable {
             return config
         } catch {
             log.fatal("Error read config file at path \(path): \(error)")
-        }
-    }
-
-    private struct DynamicCodingKeys: CodingKey {
-
-        let stringValue: String
-
-        init?(stringValue: String) {
-            self.stringValue = stringValue
-            self.intValue = nil
-        }
-
-        let intValue: Int?
-
-        init?(intValue: Int) {
-            return nil
-        }
-    }
-
-    public init(from decoder: Decoder) throws {
-        let mainContainer = try decoder.container(keyedBy: CodingKeys.self)
-        let packagesContainer = try? mainContainer.nestedContainer(keyedBy: DynamicCodingKeys.self, forKey: .packages)
-        let binariesContainer = try? mainContainer.nestedContainer(keyedBy: DynamicCodingKeys.self, forKey: .packages)
-        let podsContainer = try? mainContainer.nestedContainer(keyedBy: DynamicCodingKeys.self, forKey: .packages)
-
-        name = try mainContainer.decode(String.self, forKey: .name)
-        cache = try mainContainer.decode(CacheEngineDescriptor.self, forKey: .cache)
-        buildDirectory = try? mainContainer.decode(String.self, forKey: .buildDirectory)
-        deploymentTarget = try? mainContainer.decode([String: String].self, forKey: .deploymentTarget)
-
-        if let container = packagesContainer {
-            packages = try container
-                .allKeys
-                .map { try container.decode(PackageDependency.self, forKey: DynamicCodingKeys(stringValue: $0.stringValue)!) }
-        } else {
-            packages = nil
-        }
-        if let container = binariesContainer {
-            binaries = try container
-                .allKeys
-                .map { try container.decode(BinaryDependency.self, forKey: DynamicCodingKeys(stringValue: $0.stringValue)!) }
-        } else {
-            binaries = nil
-        }
-        if let container = podsContainer {
-            pods = try container
-                .allKeys
-                .map { try container.decode(CocoaPodDependency.self, forKey: DynamicCodingKeys(stringValue: $0.stringValue)!) }
-        } else {
-            pods = nil
         }
     }
 }

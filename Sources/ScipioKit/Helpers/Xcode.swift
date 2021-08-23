@@ -25,29 +25,27 @@ struct Xcode {
             additionalBuildSettings: buildSettings
         )
 
-        path.chdir {
-            command.run()
+        try path.chdir {
+            try command.run()
         }
 
         return archivePath
     }
 
-    static func createXCFramework(scheme: String, path: Path, sdks: [Xcodebuild.SDK], force: Bool, skipClean: Bool) throws -> [Path] {
-        let buildDirectory = Config.current.buildPath
-        let firstArchivePath = buildDirectory + "\(scheme)-\(sdks[0].rawValue).xcarchive"
+    static func createXCFramework(archivePaths: [Path], filter isIncluded: ((String) -> Bool)? = nil) throws -> [Path] {
+        precondition(!archivePaths.isEmpty, "Cannot create XCFramework from zero archives")
+
+        let firstArchivePath = archivePaths[0]
+        let buildDirectory = firstArchivePath.parent()
         let frameworkPaths = (firstArchivePath + "Products/Library/Frameworks")
             .glob("*.framework")
+            .filter { isIncluded?($0.lastComponentWithoutExtension) ?? true }
 
         return try frameworkPaths.compactMap { frameworkPath in
             let productName = frameworkPath.lastComponentWithoutExtension
-            let frameworks = sdks
-                .map { buildDirectory + "\(scheme)-\($0.rawValue).xcarchive/Products/Library/Frameworks/\(productName).framework" }
+            let frameworks = archivePaths
+                .map { $0 + "Products/Library/Frameworks/\(productName).framework" }
             let output = buildDirectory + "\(productName).xcframework"
-
-            if !force, skipClean, output.exists {
-                log.info("⏭  Skipping creating XCFramework for \(productName)...")
-                return nil
-            }
 
             log.info("📦  Creating \(productName).xcframework...")
 
@@ -60,8 +58,8 @@ struct Xcode {
                 additionalArguments: frameworks
                     .map { "-framework \($0)" } + ["-output \(output)"]
             )
-            path.chdir {
-                command.run()
+            try buildDirectory.chdir {
+                try command.run()
             }
 
             return output

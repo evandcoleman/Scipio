@@ -2,8 +2,6 @@ import Combine
 import Foundation
 import PathKit
 
-private var existsCache: [String: Bool] = [:]
-
 struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
 
     let url: URL
@@ -25,12 +23,6 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
     }
 
     func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
-        if let exists = existsCache[[product, version].joined(separator: "-")] {
-            return Just(exists)
-                .setFailureType(to: Error.self)
-                .eraseToAnyPublisher()
-        }
-
         var request = URLRequest(url: downloadUrl(for: product, version: version))
         request.httpMethod = "HEAD"
 
@@ -38,28 +30,29 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
             .dataTaskPublisher(for: request)
             .map { (($0.response as? HTTPURLResponse)?.statusCode ?? 500) < 400 }
             .mapError { $0 as Error }
-            .handleEvents(receiveOutput: { exists in
-                existsCache[[product, version].joined(separator: "-")] = exists
-            })
             .eraseToAnyPublisher()
     }
 
-    func put(product: String, version: String, path: Path) -> AnyPublisher<(), Error> {
+    func put(artifact: CompressedArtifact) -> AnyPublisher<CachedArtifact, Error> {
         return Future { promise in
-            var request = URLRequest(url: downloadUrl(for: product, version: version))
+            var request = URLRequest(url: downloadUrl(for: artifact.name, version: artifact.version))
             request.httpMethod = "PUT"
             request.allHTTPHeaderFields = [
                 "Content-Type": "application/zip"
             ]
 
             let task = urlSession
-                .uploadTask(with: request, fromFile: path.url) { data, response, error in
+                .uploadTask(with: request, fromFile: artifact.path.url) { data, response, error in
                     if let error = error {
                         promise(.failure(error))
                     } else if let statusCode = (response as? HTTPURLResponse)?.statusCode, statusCode >= 400 {
                         promise(.failure(HTTPCacheEngineError.requestFailed(statusCode: statusCode, body: String(data: data ?? Data(), encoding: .utf8) ?? "")))
                     } else {
-                        promise(.success(()))
+                        do {
+                            promise(.success(try CachedArtifact(name: artifact.name, url: request.url!, localPath: artifact.path)))
+                        } catch {
+                            promise(.failure(error))
+                        }
                     }
                 }
 
@@ -68,7 +61,7 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
         .eraseToAnyPublisher()
     }
 
-    func get(product: String, version: String, destination: Path) -> AnyPublisher<Path, Error> {
+    func get(product: String, version: String, destination: Path) -> AnyPublisher<CompressedArtifact, Error> {
         return Future<URL, Error> { promise in
             let url = downloadUrl(for: product, version: version)
 
@@ -90,7 +83,11 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
         .tryMap { url in
             try Path(url.path).copy(destination)
 
-            return destination
+            return CompressedArtifact(
+                name: product,
+                version: version,
+                path: destination
+            )
         }
         .eraseToAnyPublisher()
     }
