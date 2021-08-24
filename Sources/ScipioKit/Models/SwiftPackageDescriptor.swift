@@ -7,9 +7,10 @@ public struct SwiftPackageDescriptor: DependencyProducts {
     public let version: String
     public let path: Path
     public let manifest: PackageManifest
+    public let buildables: [SwiftPackageBuildable]
 
     public var productNames: [String]? {
-        return manifest.products.map(\.name)
+        return buildables.map(\.name)
     }
 
     public init(path: Path, name: String) throws {
@@ -38,18 +39,24 @@ public struct SwiftPackageDescriptor: DependencyProducts {
 
         self.version = (try headPath.read())
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        self.manifest = try .load(from: path)
+        let manifest: PackageManifest = try .load(from: path)
+        self.manifest = manifest
+        self.buildables = manifest.getBuildables()
+    }
+
+    public func version(for productName: String) -> String {
+        return version
     }
 }
 
 // MARK: - PackageManifest
-public struct PackageManifest: Codable {
+public struct PackageManifest: Codable, Equatable {
     public let name: String
     public let products: [Product]
     public let targets: [Target]
 
     public static func load(from path: Path) throws -> PackageManifest {
-        let cachedManifestPath = Config.current.cachePath + "\(path.lastComponent)-\(try path.glob("Package.swift")[0].checksum(.sha256)).json"
+        let cachedManifestPath = Config.current.cachePath + "\(path.lastComponent)-\(try (path + "Package.swift").checksum(.sha256)).json"
         let data: Data
         if cachedManifestPath.exists {
             log.verbose("Loading cached Package.swift for \(path.lastComponent)")
@@ -64,16 +71,54 @@ public struct PackageManifest: Codable {
 
         return try decoder.decode(PackageManifest.self, from: data)
     }
+
+    public func getBuildables() -> [SwiftPackageBuildable] {
+        return products
+            .flatMap { getBuildables(in: $0) }
+            .uniqued()
+    }
+
+    private func getBuildables(in product: Product) -> [SwiftPackageBuildable] {
+        let targets = recursiveTargets(in: product)
+
+        if let binaryTarget = targets.first(where: { $0.name == product.name && $0.type == .binary }) {
+            return [.binaryTarget(binaryTarget)]
+        }
+
+        return targets
+            .map { $0.name == product.name && $0.type != .binary ? .scheme($0.name) : .target($0.name) }
+    }
+
+    private func recursiveTargets(in product: Product) -> [PackageManifest.Target] {
+        return product
+            .targets
+            .compactMap { target in targets.first { $0.name == target } }
+            .flatMap { recursiveTargets(in: $0) }
+    }
+
+    private func recursiveTargets(in target: Target) -> [PackageManifest.Target] {
+        return [target] + target
+            .dependencies
+            .flatMap { recursiveTargets(in: $0) }
+    }
+
+    private func recursiveTargets(in dependency: TargetDependency) -> [PackageManifest.Target] {
+        let byName = dependency.byName?.compactMap { $0?.name }
+
+        return (dependency.target?.compactMap({ $0?.name }) + byName)
+            .compactMap { target in targets.first { $0.name == target } }
+            .flatMap { recursiveTargets(in: $0) }
+    }
 }
 
 extension PackageManifest {
 
-    public struct Product: Codable {
+    public struct Product: Codable, Equatable, Hashable {
         public let name: String
         public let targets: [String]
     }
 
-    public struct Target: Codable {
+    public struct Target: Codable, Equatable, Hashable {
         public let dependencies: [TargetDependency]
         public let name: String
         public let path: String?
@@ -83,11 +128,11 @@ extension PackageManifest {
         public let url: String?
         public let settings: [Setting]?
 
-        public struct Setting: Codable {
+        public struct Setting: Codable, Equatable, Hashable {
             public let name: Name
             public let value: [String]
 
-            public enum Name: String, Codable {
+            public enum Name: String, Codable, Equatable {
                 case define
                 case headerSearchPath
                 case linkedFramework
@@ -96,7 +141,7 @@ extension PackageManifest {
         }
     }
 
-    public struct TargetDependency: Codable {
+    public struct TargetDependency: Codable, Equatable, Hashable {
         public let byName: [Dependency?]?
         public let product: [Dependency?]?
         public let target: [Dependency?]?
@@ -105,19 +150,21 @@ extension PackageManifest {
             return [byName, product, target]
                 .compactMap { $0 }
                 .flatMap { $0 }
-                .compactMap { dependency in
-                    switch dependency {
-                    case .name(let name):
-                        return name
-                    default:
-                        return nil
-                    }
-                }
+                .compactMap(\.?.name)
         }
 
-        public enum Dependency: Codable {
+        public enum Dependency: Codable, Equatable, Hashable {
             case name(String)
             case constraint(platforms: [String])
+
+            public var name: String? {
+                switch self {
+                case .name(let name):
+                    return name
+                case .constraint:
+                    return nil
+                }
+            }
 
             enum CodingKeys: String, CodingKey {
                 case platformNames
@@ -155,3 +202,26 @@ extension PackageManifest {
     }
 }
 
+public enum SwiftPackageBuildable: Equatable, Hashable {
+    case scheme(String)
+    case target(String)
+    case binaryTarget(PackageManifest.Target)
+
+    public var name: String {
+        switch self {
+        case .scheme(let name):
+            return name
+        case .target(let name):
+            return name
+        case .binaryTarget(let target):
+            if let urlString = target.url, let url = URL(string: urlString) {
+                return url.lastPathComponent
+                    .components(separatedBy: ".")[0]
+            } else if let path = target.path {
+                return path.components(separatedBy: ".")[0]
+            } else {
+                return target.name
+            }
+        }
+    }
+}

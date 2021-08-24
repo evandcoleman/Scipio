@@ -27,7 +27,8 @@ extension Command {
             _ = try Runner.build(
                 dependencies: options.packages,
                 platforms: buildOptions.platform,
-                force: options.force || buildOptions.forceBuild
+                force: options.force || buildOptions.forceBuild,
+                skipClean: buildOptions.skipClean
             )
         }
     }
@@ -40,5 +41,7 @@ extension Command.Build {
 
         @Flag(help: "If true will force building dependencies")
         var forceBuild: Bool = false
+        @Flag(help: "If true will reuse existing artifacts")
+        var skipClean: Bool = false
     }
 }

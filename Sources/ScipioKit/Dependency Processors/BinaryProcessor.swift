@@ -21,40 +21,33 @@ public final class BinaryProcessor: DependencyProcessor {
             .eraseToAnyPublisher()
     }
 
-    public func process(_ dependency: BinaryDependency, resolvedTo resolvedDependency: BinaryDependency) -> AnyPublisher<[Artifact], Error> {
+    public func process(_ dependency: BinaryDependency?, resolvedTo resolvedDependency: BinaryDependency) -> AnyPublisher<[Artifact], Error> {
         return Just(dependency)
             .setFailureType(to: Error.self)
             .tryFlatMap { dependency -> AnyPublisher<(BinaryDependency, Path), Error> in
-                let downloadPath = Config.current.cachePath + dependency.url.lastPathComponent
-                let checksumCache = Config.current.cachePath + ".binary-\(dependency.name)-\(dependency.version)"
+                let downloadPath = Config.current.cachePath + resolvedDependency.url.lastPathComponent
+                let checksumCache = Config.current.cachePath + ".binary-\(resolvedDependency.name)-\(resolvedDependency.version)"
 
                 if downloadPath.exists, checksumCache.exists,
                    try downloadPath.checksum(.sha256) == (try checksumCache.read()) {
 
                     return Just(downloadPath)
                         .setFailureType(to: Error.self)
-                        .tryMap { path in
-                            return try self.decompress(dependency: dependency, at: path)
+                        .tryFlatMap { path in
+                            return Future.try {
+                                return try self.decompress(dependency: resolvedDependency, at: path)
+                            }
+                            .catch { error -> AnyPublisher<Path, Error> in
+                                log.verbose("Error decompressing, will delete and download again: \(error)")
+
+                                return self.downloadAndDecompress(resolvedDependency, path: downloadPath, checksumCache: checksumCache)
+                            }
                         }
-                        .map { (dependency, $0) }
+                        .map { (resolvedDependency, $0) }
                         .eraseToAnyPublisher()
                 } else {
-                    if downloadPath.exists {
-                        try downloadPath.delete()
-                    }
-
-                    return self.download(dependency: dependency)
-                        .tryMap { path in
-                            return try self.decompress(dependency: dependency, at: path)
-                        }
-                        .map { (dependency, $0) }
-                        .handleEvents(receiveOutput: { _ in
-                            do {
-                                try checksumCache.write(try downloadPath.checksum(.sha256))
-                            } catch {
-                                log.debug("Failed to write checksum cache for \(downloadPath)")
-                            }
-                        })
+                    return self.downloadAndDecompress(resolvedDependency, path: downloadPath, checksumCache: checksumCache)
+                        .map { (resolvedDependency, $0) }
                         .eraseToAnyPublisher()
                 }
             }
@@ -75,7 +68,7 @@ public final class BinaryProcessor: DependencyProcessor {
                             return nil
                         }
 
-                        try framework.move(targetPath)
+                        try framework.copy(targetPath)
 
                         return Artifact(
                             name: targetPath.lastComponentWithoutExtension,
@@ -86,6 +79,18 @@ public final class BinaryProcessor: DependencyProcessor {
             }
             .collect()
             .map { $0.flatMap { $0 } }
+            .tryMap { artifacts in
+                let filtered: [Artifact] = artifacts
+                    .reduce(into: []) { acc, next in
+                        if !acc.contains(where: { $0.name == next.name }) {
+                            acc.append(next)
+                        }
+                    }
+
+                try resolvedDependency.cache(filtered.map(\.name))
+
+                return filtered
+            }
             .eraseToAnyPublisher()
     }
 
@@ -93,6 +98,31 @@ public final class BinaryProcessor: DependencyProcessor {
         return Just(())
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
+    }
+
+    private func downloadAndDecompress(_ dependency: BinaryDependency, path: Path, checksumCache: Path) -> AnyPublisher<Path, Error> {
+        return Future<Path, Error>.try {
+            if path.exists {
+                try path.delete()
+            }
+
+            return path
+        }
+        .flatMap { _ -> AnyPublisher<Path, Error> in
+            return self.download(dependency: dependency)
+                .tryMap { path in
+                    return try self.decompress(dependency: dependency, at: path)
+                }
+                .handleEvents(receiveOutput: { _ in
+                    do {
+                        try checksumCache.write(try path.checksum(.sha256))
+                    } catch {
+                        log.debug("Failed to write checksum cache for \(path)")
+                    }
+                })
+                .eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
     }
 
     private func download(dependency: BinaryDependency) -> AnyPublisher<Path, Error> {
@@ -133,6 +163,10 @@ public final class BinaryProcessor: DependencyProcessor {
 
     private func decompress(dependency: BinaryDependency, at path: Path) throws -> Path {
         let targetPath = Config.current.cachePath + Path(dependency.url.path).lastComponentWithoutExtension
+
+        if options.skipClean, targetPath.exists {
+            return targetPath
+        }
 
         switch dependency.url.pathExtension {
         case "zip":

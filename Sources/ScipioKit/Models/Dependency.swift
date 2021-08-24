@@ -1,4 +1,5 @@
 import Foundation
+import PathKit
 import ProjectSpec
 
 public protocol Dependency: Decodable, Equatable {
@@ -11,29 +12,29 @@ public struct BinaryDependency: Dependency, DependencyProducts {
     public let version: String
     public let excludes: [String]?
 
-    public var productNames: [String]? { nil }
+    public var productNames: [String]? {
+        return try? productNamesCachePath.read()
+            .components(separatedBy: ",")
+    }
+
+    public var productNamesCachePath: Path {
+        return Config.current.cachePath + ".binary-products-\(name)-\(version)"
+    }
+
+    public func version(for productName: String) -> String {
+        return version
+    }
+
+    public func cache(_ productNames: [String]) throws {
+        try productNamesCachePath.write(productNames.joined(separator: ","))
+    }
 }
 
 public struct CocoaPodDependency: Dependency {
     public let name: String
     public let version: String?
-
-    public init(from decoder: Decoder) throws {
-        do {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            name = try container.decode(String.self, forKey: .name)
-            version = try? container.decode(String.self, forKey: .version)
-        } catch {
-            let container = try decoder.singleValueContainer()
-            name = try container.decode(String.self)
-            version = nil
-        }
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case name
-        case version
-    }
+    public let from: String?
+    public let git: URL?
 }
 
 public struct PackageDependency: Dependency {

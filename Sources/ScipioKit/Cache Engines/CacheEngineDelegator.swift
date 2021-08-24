@@ -13,7 +13,9 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
     }
 
     private var cache: AnyCacheEngine {
-        if let local = local {
+        if let cache = _cache {
+            return cache
+        } else if let local = local {
             return AnyCacheEngine(local)
         } else if let http = http {
             return AnyCacheEngine(http)
@@ -22,11 +24,18 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
         }
     }
 
+    private var _cache: AnyCacheEngine?
     private var existsCache: [String: Bool] = [:]
 
     public static func == (lhs: CacheEngineDelegator, rhs: CacheEngineDelegator) -> Bool {
         return lhs.local == rhs.local
             && lhs.http == rhs.http
+    }
+
+    public init<T: CacheEngine>(cache: T) {
+        self.local = nil
+        self.http = nil
+        self._cache = AnyCacheEngine(cache)
     }
 
     public func downloadUrl(for product: String, version: String) -> URL {
@@ -65,7 +74,7 @@ extension CacheEngineDelegator {
         return artifacts
             .publisher
             .setFailureType(to: Error.self)
-            .flatMap { artifact -> AnyPublisher<CachedArtifact, Error> in
+            .flatMap(maxPublishers: .max(1)) { artifact -> AnyPublisher<CachedArtifact, Error> in
                 return self.exists(artifact: artifact)
                     .flatMap { exists -> AnyPublisher<CachedArtifact, Error> in
                         if !exists || force {
@@ -91,7 +100,7 @@ extension CacheEngineDelegator {
     }
 
     public func compress(_ artifact: Artifact) -> AnyPublisher<CompressedArtifact, Error> {
-        return Future.try { promise in
+        return Future.try {
 
             let compressed = CompressedArtifact(
                 name: artifact.name,
@@ -114,7 +123,7 @@ extension CacheEngineDelegator {
                 throw ScipioError.zipFailure(artifact)
             }
 
-            promise(.success(compressed))
+            return compressed
         }
         .eraseToAnyPublisher()
     }

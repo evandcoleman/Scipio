@@ -23,25 +23,30 @@ public final class CocoaPodProcessor: DependencyProcessor {
     }
 
     public func preProcess() -> AnyPublisher<[CocoaPodDescriptor], Error> {
-        return Future.try { promise in
+        return Future.try {
             let path = Config.current.cachePath + Config.current.name
 
             _ = try self.writePodfile(in: path)
-            let pods = try self.installPods(in: path)
 
-            promise(.success(pods))
+            return try self.installPods(in: path)
         }
         .eraseToAnyPublisher()
     }
 
-    public func process(_ dependency: CocoaPodDependency, resolvedTo resolvedDependency: CocoaPodDescriptor) -> AnyPublisher<[Artifact], Error> {
-        return Future.try { promise in
+    public func process(_ dependency: CocoaPodDependency?, resolvedTo resolvedDependency: CocoaPodDescriptor) -> AnyPublisher<[Artifact], Error> {
+        return Future.try {
             let derivedDataPath = Config.current.cachePath + "DerivedData" + Config.current.name
 
             let paths = try self.options.platforms.flatMap { platform -> [Path] in
                 let archivePaths = try platform.sdks.map { sdk -> Path in
+                    let scheme = "\(resolvedDependency.name)-\(platform.rawValue)"
+
+                    if self.options.skipClean, Xcode.archivePath(for: scheme, sdk: sdk).exists {
+                        return Xcode.archivePath(for: scheme, sdk: sdk)
+                    }
+
                     return try Xcode.archive(
-                        scheme: "\(resolvedDependency.name)-\(platform.rawValue)",
+                        scheme: scheme,
                         in: self.projectPath.parent() + "\(self.projectPath.lastComponentWithoutExtension).xcworkspace",
                         for: sdk,
                         derivedDataPath: derivedDataPath
@@ -50,17 +55,18 @@ public final class CocoaPodProcessor: DependencyProcessor {
 
                 return try Xcode.createXCFramework(
                     archivePaths: archivePaths,
+                    skipIfExists: self.options.skipClean,
                     filter: { !$0.hasPrefix("Pods_") && $0 != "\(resolvedDependency.name)-\(platform.rawValue)" }
                 )
             }
 
-            promise(.success(paths.compactMap { path in
+            return paths.compactMap { path in
                 return Artifact(
                     name: path.lastComponentWithoutExtension,
-                    version: resolvedDependency.resolvedVersion,
+                    version: resolvedDependency.version(for: path.lastComponentWithoutExtension),
                     path: path
                 )
-            }))
+            }
         }
         .eraseToAnyPublisher()
     }
@@ -105,7 +111,7 @@ use_frameworks!
 project '\(projectPath.string)'
 
 \(dependencies
-    .map { dep in Config.current.platformVersions.map { "target '\(dep.name)-\($0.key.rawValue)' do\n\(4.spaces)platform :\($0.key.rawValue), '\($0.value)'\n\(4.spaces)pod '\(dep.name)'\nend" }.joined(separator: "\n\n") }
+    .map { dep in Config.current.platformVersions.map { "target '\(dep.name)-\($0.key.rawValue)' do\n\(4.spaces)platform :\($0.key.rawValue), '\($0.value)'\n\(4.spaces)\(dep.asString())\nend" }.joined(separator: "\n\n") }
     .joined(separator: "\n\n"))
 """)
 
@@ -123,17 +129,23 @@ project '\(projectPath.string)'
         let project = try XcodeProj(path: podsProjectPath)
 
         return try dependencies.map { dependency in
+            let productNames = project.productNames(for: dependency.name)
             let versionRegex = try Regex(string: "- \(dependency.name)\\s\\((.*)\\)")
-            let match = versionRegex.firstMatch(in: try (path + "Podfile.lock").read())
+            let lockFile: String = try (path + "Podfile.lock").read()
+            let match = versionRegex.firstMatch(in: lockFile)
 
             guard let version = match?.captures.last??.components(separatedBy: " ").last else {
                 throw CocoaPodProcessorError.missingVersion(dependency)
             }
 
+            let versions: [String: String] = try productNames
+                .map { (product: $0, regex: try Regex(string: "- \($0)\\s\\((.*)\\)")) }
+                .reduce(into: [:]) { $0[$1.product] = $1.regex.firstMatch(in: lockFile)?.captures.last??.components(separatedBy: " ").last ?? version }
+
             return CocoaPodDescriptor(
                 name: dependency.name,
-                resolvedVersion: version,
-                productNames: project.productNames(for: dependency.name)
+                resolvedVersions: versions,
+                productNames: productNames
             )
         }
     }
@@ -141,8 +153,26 @@ project '\(projectPath.string)'
 
 public struct CocoaPodDescriptor: DependencyProducts {
     public let name: String
-    public let resolvedVersion: String
+    public let resolvedVersions: [String: String]
     public let productNames: [String]?
 
-    public var version: String { resolvedVersion }
+    public func version(for productName: String) -> String {
+        return resolvedVersions[productName]!
+    }
+}
+
+private extension CocoaPodDependency {
+    func asString() -> String {
+        var result = "pod '\(name)'"
+
+        if let git = git {
+            result += ", :git => '\(git)'"
+        } else if let version = version {
+            result += ", '\(version)'"
+        } else if let from = from {
+            result += ", '~> \(from)'"
+        }
+
+        return result
+    }
 }

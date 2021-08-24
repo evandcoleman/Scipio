@@ -3,8 +3,11 @@ import Foundation
 import PathKit
 
 struct Xcode {
+    static func archivePath(for scheme: String, sdk: Xcodebuild.SDK) -> Path {
+        return Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
+    }
+
     static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path) throws -> Path {
-        log.info("🏗  Building \(scheme)-\(sdk.rawValue)...")
 
         let buildSettings: [String: String] = [
             "BUILD_LIBRARY_FOR_DISTRIBUTION": "YES",
@@ -13,7 +16,10 @@ struct Xcode {
             "INSTALL_PATH": "/Library/Frameworks"
         ]
 
-        let archivePath = Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
+        let archivePath = archivePath(for: scheme, sdk: sdk)
+
+        log.info("🏗  Building \(scheme)-\(sdk.rawValue)...")
+
         let command = Xcodebuild(
             command: .archive,
             workspace: path.extension == "xcworkspace" ? path.string : nil,
@@ -32,7 +38,7 @@ struct Xcode {
         return archivePath
     }
 
-    static func createXCFramework(archivePaths: [Path], filter isIncluded: ((String) -> Bool)? = nil) throws -> [Path] {
+    static func createXCFramework(archivePaths: [Path], skipIfExists: Bool, filter isIncluded: ((String) -> Bool)? = nil) throws -> [Path] {
         precondition(!archivePaths.isEmpty, "Cannot create XCFramework from zero archives")
 
         let firstArchivePath = archivePaths[0]
@@ -46,6 +52,10 @@ struct Xcode {
             let frameworks = archivePaths
                 .map { $0 + "Products/Library/Frameworks/\(productName).framework" }
             let output = buildDirectory + "\(productName).xcframework"
+
+            if skipIfExists, output.exists {
+                return output
+            }
 
             log.info("📦  Creating \(productName).xcframework...")
 

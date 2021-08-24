@@ -2,18 +2,18 @@ import Combine
 import Foundation
 import PathKit
 
-struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
+public struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
 
-    let url: URL
+    public let url: URL
 
     private var urlSession: URLSession { .shared }
 
-    enum HTTPCacheEngineError: Error {
+    public enum HTTPCacheEngineError: Error {
         case requestFailed(statusCode: Int, body: String? = nil)
         case downloadFailed
     }
 
-    func downloadUrl(for product: String, version: String) -> URL {
+    public func downloadUrl(for product: String, version: String) -> URL {
         let encodedProduct = product.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
         let encodedVersion = version.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
 
@@ -22,7 +22,7 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
             .appendingPathComponent("\(encodedProduct)-\(encodedVersion).xcframework.zip")
     }
 
-    func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
+    public func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
         var request = URLRequest(url: downloadUrl(for: product, version: version))
         request.httpMethod = "HEAD"
 
@@ -33,7 +33,7 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
             .eraseToAnyPublisher()
     }
 
-    func put(artifact: CompressedArtifact) -> AnyPublisher<CachedArtifact, Error> {
+    public func put(artifact: CompressedArtifact) -> AnyPublisher<CachedArtifact, Error> {
         return Future { promise in
             var request = URLRequest(url: downloadUrl(for: artifact.name, version: artifact.version))
             request.httpMethod = "PUT"
@@ -61,7 +61,7 @@ struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
         .eraseToAnyPublisher()
     }
 
-    func get(product: String, version: String, destination: Path) -> AnyPublisher<CompressedArtifact, Error> {
+    public func get(product: String, version: String, destination: Path) -> AnyPublisher<CompressedArtifact, Error> {
         return Future<URL, Error> { promise in
             let url = downloadUrl(for: product, version: version)
 

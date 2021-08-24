@@ -2,26 +2,30 @@ import Combine
 import Foundation
 import PathKit
 
-struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
-    let path: String
+public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
+    public let path: String
 
-    var requiresCompression: Bool { false }
+    public var requiresCompression: Bool { false }
 
-    enum LocalCacheEngineError: Error {
+    public enum LocalCacheEngineError: Error {
         case fileNotFound
     }
 
-    func downloadUrl(for product: String, version: String) -> URL {
+    public init(path: Path) {
+        self.path = path.string
+    }
+
+    public func downloadUrl(for product: String, version: String) -> URL {
         return localPath(for: product, version: version).url
     }
 
-    func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
+    public func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
         return Just(localPath(for: product, version: version).exists)
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func put(artifact: Artifact) -> AnyPublisher<CachedArtifact, Error> {
+    public func put(artifact: Artifact) -> AnyPublisher<CachedArtifact, Error> {
         let cachePath = localPath(for: artifact.name, version: artifact.version)
 
         return Just(cachePath)
@@ -41,7 +45,7 @@ struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
             .eraseToAnyPublisher()
     }
 
-    func get(product: String, version: String, destination: Path) -> AnyPublisher<Artifact, Error> {
+    public func get(product: String, version: String, destination: Path) -> AnyPublisher<Artifact, Error> {
         let cachePath = localPath(for: product, version: version)
 
         return Just(cachePath)

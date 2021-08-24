@@ -5,6 +5,7 @@ import ProjectSpec
 import Regex
 import Version
 import XcodeGenKit
+import Zip
 
 public final class PackageProcessor: DependencyProcessor {
 
@@ -15,13 +16,15 @@ public final class PackageProcessor: DependencyProcessor {
         return Config.current.cachePath + "DerivedData" + Config.current.name
     }
 
+    private let urlSession: URLSession = .createWithExtensionsSupport()
+
     public init(dependencies: [PackageDependency], options: ProcessorOptions) {
         self.dependencies = dependencies
         self.options = options
     }
 
     public func preProcess() -> AnyPublisher<[SwiftPackageDescriptor], Error> {
-        return Future.try { promise in
+        return Future.try {
             let projectPath = try self.writeProject()
 
             if !self.derivedDataPath.exists {
@@ -30,55 +33,94 @@ public final class PackageProcessor: DependencyProcessor {
 
             try self.resolvePackageDependencies(in: projectPath, derivedDataPath: self.derivedDataPath)
 
-            let packages = try self.readPackages(derivedDataPath: self.derivedDataPath)
-
-            promise(.success(packages))
+            return try self.readPackages(derivedDataPath: self.derivedDataPath)
         }
         .eraseToAnyPublisher()
     }
 
-    public func process(_ dependency: PackageDependency, resolvedTo resolvedDependency: SwiftPackageDescriptor) -> AnyPublisher<[Artifact], Error> {
-        return Future.try { promise in
-            let path = try self.setupWorkingPath(for: resolvedDependency)
-            try self.preBuild(path: path)
+    public func process(_ dependency: PackageDependency?, resolvedTo resolvedDependency: SwiftPackageDescriptor) -> AnyPublisher<[Artifact], Error> {
+        return Future<([Artifact], [AnyPublisher<Artifact, Error>]), Error>.try {
+
             var xcFrameworks: [Artifact] = []
+            var downloads: [AnyPublisher<Artifact, Error>] = []
 
-            for product in resolvedDependency.productNames ?? [] {
-                try self.forceDynamicFrameworkProduct(scheme: product, in: path)
-
-                let archivePaths = try self.options.platforms.sdks.map { sdk -> Path in
-                    let archivePath = try Xcode.archive(
-                        scheme: product,
-                        in: path,
-                        for: sdk,
-                        derivedDataPath: self.derivedDataPath
-                    )
-
-                    try self.copyModulesAndHeaders(
-                        package: resolvedDependency,
-                        scheme: product,
-                        sdk: sdk,
-                        archivePath: archivePath,
-                        derivedDataPath: self.derivedDataPath
-                    )
-
-                    return archivePath
-                }
-
-                xcFrameworks <<< try Xcode.createXCFramework(
-                    archivePaths: archivePaths
-                ).map { path in
-                    return Artifact(
-                        name: path.lastComponentWithoutExtension,
+            for product in resolvedDependency.buildables {
+                if case .binaryTarget(let target) = product {
+                    let targetPath = Config.current.buildPath + "\(product.name).xcframework"
+                    let artifact = Artifact(
+                        name: product.name,
                         version: resolvedDependency.version,
-                        path: path
+                        path: targetPath
+                    )
+
+                    if self.options.skipClean, targetPath.exists {
+                        xcFrameworks <<< artifact
+                        continue
+                    }
+
+                    if let urlString = target.url, let url = URL(string: urlString),
+                       let checksum = target.checksum {
+                        downloads <<< Future<Path, Error>.deferred { promise in
+                            let task = self.urlSession
+                                .downloadTask(with: url, progressHandler: { log.progress("Downloading \(url.lastPathComponent)", percent: $0) }) { url, response, error in
+                                    if let error = error {
+                                        promise(.failure(error))
+                                    } else if let url = url {
+                                        promise(.success(Path(url.path)))
+                                    } else {
+                                        log.fatal("Unexpected download result")
+                                    }
+                                }
+
+                            task.resume()
+                        }
+                        .tryMap { downloadPath -> Artifact in
+                            let zipPath = Config.current.cachePath + url.lastPathComponent
+
+                            if zipPath.exists {
+                                try zipPath.delete()
+                            }
+
+                            try downloadPath.copy(zipPath)
+
+                            guard try zipPath.checksum(.sha256) == checksum else {
+                                throw ScipioError.checksumMismatch(product: product.name)
+                            }
+
+                            try Zip.unzipFile(zipPath.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress("Decompressing \(zipPath.lastComponent)", percent: $0) })
+
+                            return artifact
+                        }
+                        .eraseToAnyPublisher()
+                    } else if let targetPath = target.path {
+                        let fullPath = resolvedDependency.path + Path(targetPath)
+                        let targetPath = Config.current.buildPath + fullPath.lastComponent
+
+                        if targetPath.exists {
+                            try targetPath.delete()
+                        }
+
+                        try fullPath.copy(targetPath)
+
+                        xcFrameworks <<< artifact
+                    }
+                } else {
+                    xcFrameworks <<< try self.buildAndExport(
+                        buildable: product,
+                        package: resolvedDependency
                     )
                 }
             }
 
-            try self.postBuild(path: path)
-
-            promise(.success(xcFrameworks))
+            return (xcFrameworks, downloads)
+        }
+        .flatMap { frameworks, downloads -> AnyPublisher<[Artifact], Error> in
+            return downloads
+                .publisher
+                .flatMap(maxPublishers: .max(1)) { $0 }
+                .collect()
+                .map { frameworks + $0 }
+                .eraseToAnyPublisher()
         }
         .eraseToAnyPublisher()
     }
@@ -171,16 +213,82 @@ public final class PackageProcessor: DependencyProcessor {
         try path.delete()
     }
 
+    private func buildAndExport(buildable: SwiftPackageBuildable, package: SwiftPackageDescriptor) throws -> [Artifact] {
+        var path: Path? = nil
+
+        let archivePaths = try options.platforms.sdks.map { sdk -> Path in
+
+            if options.skipClean, Xcode.archivePath(for: buildable.name, sdk: sdk).exists {
+                return Xcode.archivePath(for: buildable.name, sdk: sdk)
+            }
+
+            if path == nil {
+                path = try self.setupWorkingPath(for: package)
+                try self.preBuild(path: path!)
+            }
+
+            try forceDynamicFrameworkProduct(scheme: buildable.name, in: path!)
+
+            let archivePath = try Xcode.archive(
+                scheme: buildable.name,
+                in: path!,
+                for: sdk,
+                derivedDataPath: derivedDataPath
+            )
+
+            try copyModulesAndHeaders(
+                package: package,
+                scheme: buildable.name,
+                sdk: sdk,
+                archivePath: archivePath,
+                derivedDataPath: derivedDataPath
+            )
+
+            return archivePath
+        }
+
+        let artifacts = try Xcode.createXCFramework(
+            archivePaths: archivePaths,
+            skipIfExists: options.skipClean
+        ).map { path in
+            return Artifact(
+                name: path.lastComponentWithoutExtension,
+                version: package.version,
+                path: path
+            )
+        }
+
+        if let path = path {
+            try self.postBuild(path: path)
+        }
+
+        return artifacts
+    }
+
+    // We need to rewrite Package.swift to force build a dynamic framework
+    // https://forums.swift.org/t/how-to-build-swift-package-as-xcframework/41414/4
     private func forceDynamicFrameworkProduct(scheme: String, in path: Path) throws {
         precondition(path.exists, "You must call preBuild() before calling this function")
 
-        try path.chdir {
-            // We need to rewrite Package.swift to force build a dynamic framework
-            // https://forums.swift.org/t/how-to-build-swift-package-as-xcframework/41414/4
+        var contents: String = try (path + "Package.swift").read()
+
+        let productRegex = try Regex(string: #"(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)"#)
+
+        if let _ = productRegex.firstMatch(in: contents) {
             // TODO: This should be rewritten using the Regex library
-            try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g' Package.swift"#).logOutput().waitUntilExit()
-            try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g' Package.swift"#).logOutput().waitUntilExit()
-            try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g' Package.swift"#).logOutput().waitUntilExit()
+            try path.chdir {
+                try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g' Package.swift"#).waitUntilExit()
+                try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g' Package.swift"#).waitUntilExit()
+                try sh(#"perl -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g' Package.swift"#).waitUntilExit()
+            }
+        } else {
+            let insertRegex = Regex(#"products:[^\[]*\["#)
+            guard let match = insertRegex.firstMatch(in: contents)?.range else {
+                fatalError()
+            }
+
+            contents.insert(contentsOf: #".library(name: "\#(scheme)", type: .dynamic, targets: ["\#(scheme)"]),"#, at: match.upperBound)
+            try (path + "Package.swift").write(contents)
         }
     }
 
@@ -220,6 +328,7 @@ public final class PackageProcessor: DependencyProcessor {
                 // to see if the package includes its own.
                 if (moduleMapPath == nil || moduleMapPath?.exists == false),
                    let target = package.manifest.targets.first(where: { $0.name == frameworkName }),
+                   target.type != .binary,
                    let path = target.path {
 
                     moduleMapPath = try Path(path)

@@ -35,7 +35,8 @@ extension Command {
         let artifacts = try Runner.build(
             dependencies: options.packages,
             platforms: buildOptions.platform,
-            force: options.force || buildOptions.forceBuild
+            force: options.force || buildOptions.forceBuild,
+            skipClean: buildOptions.skipClean
         )
 
         let cachedArtifacts = try Runner.upload(

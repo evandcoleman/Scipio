@@ -4,7 +4,7 @@ import Yams
 
 public struct Config: Decodable, Equatable {
 
-    public private(set) static var current: Config!
+    public internal(set) static var current: Config!
 
     public let name: String
     public let cacheDelegator: CacheEngineDelegator
@@ -49,6 +49,15 @@ public struct Config: Decodable, Equatable {
 
     private var _path: Path!
 
+    public init<Cache: CacheEngine>(name: String, cache: Cache, deploymentTarget: [String: String], binaries: [BinaryDependency]? = nil, packages: [PackageDependency]? = nil, pods: [CocoaPodDependency]? = nil) {
+        self.name = name
+        self.cacheDelegator = CacheEngineDelegator(cache: cache)
+        self.deploymentTarget = deploymentTarget
+        self.binaries = binaries
+        self.packages = packages
+        self.pods = pods
+    }
+
     enum CodingKeys: String, CodingKey {
         case name
         case cacheDelegator = "cache"
@@ -82,34 +91,4 @@ public struct Config: Decodable, Equatable {
             log.fatal("Error read config file at path \(path): \(error)")
         }
     }
-}
-
-extension Config {
-    public enum Dependency {}
-
-//    enum Product: Decodable, Equatable {
-//        case scheme(String)
-//        case target(String)
-//
-//        var name: String {
-//            switch self {
-//            case .scheme(let name): return name
-//            case .target(let name): return name
-//            }
-//        }
-//
-//        init(from decoder: Decoder) throws {
-//            do {
-//                let container = try decoder.container(keyedBy: CodingKeys.self)
-//                self = .target(try container.decode(String.self, forKey: .target))
-//            } catch {
-//                let container = try decoder.singleValueContainer()
-//                self = .scheme(try container.decode(String.self))
-//            }
-//        }
-//
-//        enum CodingKeys: String, CodingKey {
-//            case target
-//        }
-//    }
 }

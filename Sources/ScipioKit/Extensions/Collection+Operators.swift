@@ -9,3 +9,7 @@ public func <<< <T: RangeReplaceableCollection>(lhs: inout T, rhs: T.Iterator.El
 public func <<< <T: RangeReplaceableCollection>(lhs: inout T, rhs: T?) {
     lhs.append(contentsOf: rhs ?? T())
 }
+
+public func + <T: RangeReplaceableCollection>(lhs: T?, rhs: T?) -> T {
+    return (lhs ?? T()) + (rhs ?? T())
+}

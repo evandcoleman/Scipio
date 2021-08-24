@@ -12,27 +12,26 @@ public protocol DependencyProcessor {
     init(dependencies: [Input], options: ProcessorOptions)
 
     func preProcess() -> AnyPublisher<[ResolvedInput], Error>
-    func process(_ dependency: Input, resolvedTo resolvedDependency: ResolvedInput) -> AnyPublisher<[Artifact], Error>
+    func process(_ dependency: Input?, resolvedTo resolvedDependency: ResolvedInput) -> AnyPublisher<[Artifact], Error>
     func postProcess() -> AnyPublisher<(), Error>
 }
 
 public protocol DependencyProducts {
     var name: String { get }
-    var version: String { get }
     var productNames: [String]? { get }
+
+    func version(for productName: String) -> String
 }
 
 extension DependencyProcessor {
     public func process(dependencies onlyDependencies: [Input]? = nil) -> AnyPublisher<[Artifact], Error> {
         return preProcess()
             .flatMap { dependencyProducts in
-                return (onlyDependencies ?? dependencies)
+                return dependencyProducts
                     .publisher
                     .setFailureType(to: Error.self)
-                    .flatMap { dependency -> AnyPublisher<[Artifact], Error> in
-                        guard let dependencyProduct = dependencyProducts.first(where: { $0.name == dependency.name }) else {
-                            fatalError()
-                        }
+                    .tryFlatMap(maxPublishers: .max(1)) { dependencyProduct -> AnyPublisher<[Artifact], Error> in
+                        let dependency = (onlyDependencies ?? dependencies).first(where: { $0.name == dependencyProduct.name })
 
                         guard let productNames = dependencyProduct.productNames else {
                             return self.process(dependency, resolvedTo: dependencyProduct)
@@ -41,16 +40,35 @@ extension DependencyProcessor {
                         return productNames
                             .publisher
                             .setFailureType(to: Error.self)
-                            .flatMap { productName -> AnyPublisher<Bool, Error> in
+                            .flatMap(maxPublishers: .max(2)) { productName -> AnyPublisher<String, Error> in
+                                if self.options.force {
+                                    return Just(productName)
+                                        .setFailureType(to: Error.self)
+                                        .eraseToAnyPublisher()
+                                }
+
                                 return Config.current.cacheDelegator
-                                    .exists(product: productName, version: dependencyProduct.version)
+                                    .exists(product: productName, version: dependencyProduct.version(for: productName))
                                     .filter { !$0 }
+                                    .map { _ in productName }
                                     .eraseToAnyPublisher()
                             }
                             .collect()
                             .flatMap { missingProducts -> AnyPublisher<[Artifact], Error> in
                                 if missingProducts.isEmpty {
-                                    return Just([])
+                                    return Just(productNames
+                                        .compactMap { productName in
+                                            let path = Config.current.buildPath + "\(productName).xcframework"
+
+                                            // TODO: Probably shouldn't fail silently here
+                                            guard path.exists else { return nil }
+
+                                            return Artifact(
+                                                name: productName,
+                                                version: dependencyProduct.version(for: productName),
+                                                path: path
+                                            )
+                                        })
                                         .setFailureType(to: Error.self)
                                         .eraseToAnyPublisher()
                                 } else {
@@ -59,8 +77,10 @@ extension DependencyProcessor {
                             }
                             .eraseToAnyPublisher()
                     }
+                    .collect()
                     .eraseToAnyPublisher()
             }
+            .map { $0.flatMap { $0 } }
             .flatMap { next in self.postProcess().map { _ in next } }
             .eraseToAnyPublisher()
     }
@@ -69,10 +89,12 @@ extension DependencyProcessor {
 public struct ProcessorOptions {
     public let platforms: [Platform]
     public let force: Bool
+    public let skipClean: Bool
 
-    public init(platforms: [Platform], force: Bool) {
+    public init(platforms: [Platform], force: Bool, skipClean: Bool) {
         self.platforms = platforms
         self.force = force
+        self.skipClean = skipClean
     }
 }
 

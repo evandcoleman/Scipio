@@ -27,11 +27,9 @@ struct ShellCommand {
     }
 
     func waitForOutput() throws -> Data {
-        var output = ""
-        onReadLine(pipe: outputPipe) { output += $0 }
         try waitUntilExit()
 
-        return output.data(using: .utf8)!
+        return outputPipe.fileHandleForReading.readDataToEndOfFile()
     }
 
     func waitForOutputString() throws -> String {

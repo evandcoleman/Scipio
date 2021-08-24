@@ -4,10 +4,11 @@ import ScipioKit
 
 enum Runner {
 
-    static func build(dependencies: [String]?, platforms: [Platform], force: Bool) throws -> [Artifact] {
+    static func build(dependencies: [String]?, platforms: [Platform], force: Bool, skipClean: Bool) throws -> [Artifact] {
         let processorOptions = ProcessorOptions(
             platforms: platforms,
-            force: force
+            force: force,
+            skipClean: skipClean
         )
 
         var artifacts: [Artifact] = []
