@@ -38,17 +38,18 @@ public final class PackageProcessor: DependencyProcessor {
         .eraseToAnyPublisher()
     }
 
-    public func process(_ dependency: PackageDependency?, resolvedTo resolvedDependency: SwiftPackageDescriptor) -> AnyPublisher<[Artifact], Error> {
-        return Future<([Artifact], [AnyPublisher<Artifact, Error>]), Error>.try {
+    public func process(_ dependency: PackageDependency?, resolvedTo resolvedDependency: SwiftPackageDescriptor) -> AnyPublisher<[AnyArtifact], Error> {
+        return Future<([AnyArtifact], [AnyPublisher<AnyArtifact, Error>]), Error>.try {
 
             var xcFrameworks: [Artifact] = []
-            var downloads: [AnyPublisher<Artifact, Error>] = []
+            var downloads: [AnyPublisher<AnyArtifact, Error>] = []
 
             for product in resolvedDependency.buildables {
                 if case .binaryTarget(let target) = product {
                     let targetPath = Config.current.buildPath + "\(product.name).xcframework"
                     let artifact = Artifact(
                         name: product.name,
+                        parentName: resolvedDependency.name,
                         version: resolvedDependency.version,
                         path: targetPath
                     )
@@ -74,7 +75,7 @@ public final class PackageProcessor: DependencyProcessor {
 
                             task.resume()
                         }
-                        .tryMap { downloadPath -> Artifact in
+                        .tryMap { downloadPath -> AnyArtifact in
                             let zipPath = Config.current.cachePath + url.lastPathComponent
 
                             if zipPath.exists {
@@ -87,9 +88,13 @@ public final class PackageProcessor: DependencyProcessor {
                                 throw ScipioError.checksumMismatch(product: product.name)
                             }
 
-                            try Zip.unzipFile(zipPath.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress("Decompressing \(zipPath.lastComponent)", percent: $0) })
+                            if targetPath.exists {
+                                try targetPath.delete()
+                            }
 
-                            return artifact
+                            try Zip.unzipFile(zipPath.url, destination: targetPath.parent().url, overwrite: true, password: nil, progress: { log.progress("Decompressing \(zipPath.lastComponent)", percent: $0) })
+
+                            return AnyArtifact(artifact)
                         }
                         .eraseToAnyPublisher()
                     } else if let targetPath = target.path {
@@ -112,9 +117,9 @@ public final class PackageProcessor: DependencyProcessor {
                 }
             }
 
-            return (xcFrameworks, downloads)
+            return (xcFrameworks.map { AnyArtifact($0) }, downloads)
         }
-        .flatMap { frameworks, downloads -> AnyPublisher<[Artifact], Error> in
+        .flatMap { frameworks, downloads -> AnyPublisher<[AnyArtifact], Error> in
             return downloads
                 .publisher
                 .flatMap(maxPublishers: .max(1)) { $0 }
@@ -253,6 +258,7 @@ public final class PackageProcessor: DependencyProcessor {
         ).map { path in
             return Artifact(
                 name: path.lastComponentWithoutExtension,
+                parentName: package.name,
                 version: package.version,
                 path: path
             )

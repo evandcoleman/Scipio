@@ -1,4 +1,5 @@
 import Foundation
+import PathKit
 
 func sh(_ command: String) -> ShellCommand {
     ShellCommand.sh(command)
@@ -65,5 +66,11 @@ struct ShellCommand {
         if task.terminationStatus > 0 {
             throw ScipioError.commandFailed(command: command, status: Int(task.terminationStatus), output: String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
         }
+    }
+}
+
+public extension Path {
+    var quoted: String {
+        return #""\#(string)""#
     }
 }

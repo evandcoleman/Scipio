@@ -58,19 +58,72 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
             .eraseToAnyPublisher()
     }
 
-    public func get(product: String, version: String, destination: Path) -> AnyPublisher<AnyArtifact, Error> {
+    public func get(product: String, in parentName: String, version: String, destination: Path) -> AnyPublisher<AnyArtifact, Error> {
         log.verbose("Fetching \(product)-\(version)")
-        return cache.get(product: product, version: version, destination: destination)
+
+        let normalizedDestination = cache.requiresCompression && destination.extension != "zip" ? destination.parent() + "\(destination.lastComponent).zip" : destination
+
+        return Future<AnyArtifact?, Error>.try {
+            if normalizedDestination.exists, self.versionCachePath(for: product, version: version).exists, try normalizedDestination.checksum(.sha256) == (try self.versionCachePath(for: product, version: version).read()) {
+                if self.cache.requiresCompression {
+                    return AnyArtifact(CompressedArtifact(
+                        name: product,
+                        parentName: parentName,
+                        version: version,
+                        path: normalizedDestination
+                    ))
+                } else {
+                    return AnyArtifact(Artifact(
+                        name: product,
+                        parentName: parentName,
+                        version: version,
+                        path: destination
+                    ))
+                }
+            } else {
+                return nil
+            }
+        }
+        .flatMap { artifact -> AnyPublisher<AnyArtifact, Error> in
+            if let artifact = artifact {
+                return Just(artifact)
+                    .setFailureType(to: Error.self)
+                    .eraseToAnyPublisher()
+            } else {
+                return self.cache
+                    .get(product: product, in: parentName, version: version, destination: destination)
+                    .tryMap { artifact in
+                        try self.versionCachePath(for: artifact.name, version: artifact.version)
+                            .write(artifact.path.checksum(.sha256))
+
+                        return artifact
+                    }
+                    .eraseToAnyPublisher()
+            }
+        }
+        .eraseToAnyPublisher()
     }
 
     public func put(artifact: AnyArtifact) -> AnyPublisher<CachedArtifact, Error> {
         log.verbose("Caching \(artifact.name)-\(artifact.version)")
+
         return cache.put(artifact: artifact)
+            .tryMap { cachedArtifact in
+                try self.versionCachePath(for: artifact.name, version: artifact.version)
+                    .write(artifact.path.checksum(.sha256))
+
+                return cachedArtifact
+            }
+            .eraseToAnyPublisher()
+    }
+
+    private func versionCachePath(for product: String, version: String) -> Path {
+        return Config.current.buildPath + ".version-\(product)-\(version)"
     }
 }
 
 extension CacheEngineDelegator {
-    public func upload(_ artifacts: [Artifact], force: Bool) -> AnyPublisher<[CachedArtifact], Error> {
+    public func upload(_ artifacts: [AnyArtifact], force: Bool, skipClean: Bool) -> AnyPublisher<[CachedArtifact], Error> {
         return artifacts
             .publisher
             .setFailureType(to: Error.self)
@@ -81,14 +134,14 @@ extension CacheEngineDelegator {
                             log.info("☁️ Uploading \(artifact.name)...")
 
                             if self.cache.requiresCompression {
-                                return self.compress(artifact)
+                                return self.compress(artifact, skipClean: skipClean)
                                     .flatMap { self.put(artifact: AnyArtifact($0)) }
                                     .eraseToAnyPublisher()
                             } else {
                                 return self.put(artifact: AnyArtifact(artifact))
                             }
                         } else {
-                            return Just(CachedArtifact(name: artifact.name, url: self.downloadUrl(for: artifact)))
+                            return Just(CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact)))
                                 .setFailureType(to: Error.self)
                                 .eraseToAnyPublisher()
                         }
@@ -99,17 +152,24 @@ extension CacheEngineDelegator {
             .eraseToAnyPublisher()
     }
 
-    public func compress(_ artifact: Artifact) -> AnyPublisher<CompressedArtifact, Error> {
+    public func compress(_ artifact: AnyArtifact, skipClean: Bool) -> AnyPublisher<CompressedArtifact, Error> {
         return Future.try {
+
+            if let base = artifact.base as? CompressedArtifact {
+                return base
+            }
 
             let compressed = CompressedArtifact(
                 name: artifact.name,
+                parentName: artifact.parentName,
                 version: artifact.version,
                 path: artifact.path.parent() + "\(artifact.path.lastComponent).zip"
             )
 
-            if compressed.path.exists {
+            if compressed.path.exists, !skipClean {
                 try compressed.path.delete()
+            } else if compressed.path.exists {
+                return compressed
             }
 
             do {

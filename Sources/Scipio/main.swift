@@ -36,15 +36,22 @@ extension Command {
             dependencies: options.packages,
             platforms: buildOptions.platform,
             force: options.force || buildOptions.forceBuild,
-            skipClean: buildOptions.skipClean
-        )
+            skipClean: options.skipClean
+        ).filter { artifact in
+            if let packages = options.packages {
+                return packages.contains(artifact.parentName)
+            } else {
+                return true
+            }
+        }
 
         let cachedArtifacts = try Runner.upload(
             artifacts: artifacts,
-            force: options.force || uploadOptions.forceUpload
+            force: options.force || uploadOptions.forceUpload,
+            skipClean: options.skipClean
         )
 
-        try Runner.updatePackageManifest(at: Config.current.directory, with: cachedArtifacts)
+        try Runner.updatePackageManifest(at: Config.current.directory, with: cachedArtifacts, removeMissing: options.packages?.isEmpty != false)
     }
   }
 }
@@ -71,6 +78,9 @@ extension Command.Main {
 
         @Flag(help: "If true will force build and upload packages")
         var force: Bool = false
+
+        @Flag(help: "If true will reuse existing artifacts")
+        var skipClean: Bool = false
 
         var logLevel: Log.Level {
             if verbose {

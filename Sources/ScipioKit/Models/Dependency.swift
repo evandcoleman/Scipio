@@ -26,7 +26,9 @@ public struct BinaryDependency: Dependency, DependencyProducts {
     }
 
     public func cache(_ productNames: [String]) throws {
-        try productNamesCachePath.write(productNames.joined(separator: ","))
+        if productNames.filter(\.isEmpty).isEmpty {
+            try productNamesCachePath.write(productNames.joined(separator: ","))
+        }
     }
 }
 
@@ -35,6 +37,7 @@ public struct CocoaPodDependency: Dependency {
     public let version: String?
     public let from: String?
     public let git: URL?
+    public let excludes: [String]?
 }
 
 public struct PackageDependency: Dependency {

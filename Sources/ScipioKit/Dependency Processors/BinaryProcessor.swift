@@ -21,7 +21,7 @@ public final class BinaryProcessor: DependencyProcessor {
             .eraseToAnyPublisher()
     }
 
-    public func process(_ dependency: BinaryDependency?, resolvedTo resolvedDependency: BinaryDependency) -> AnyPublisher<[Artifact], Error> {
+    public func process(_ dependency: BinaryDependency?, resolvedTo resolvedDependency: BinaryDependency) -> AnyPublisher<[AnyArtifact], Error> {
         return Just(dependency)
             .setFailureType(to: Error.self)
             .tryFlatMap { dependency -> AnyPublisher<(BinaryDependency, Path), Error> in
@@ -51,11 +51,11 @@ public final class BinaryProcessor: DependencyProcessor {
                         .eraseToAnyPublisher()
                 }
             }
-            .tryMap { dependency, path -> [Artifact] in
-                return try path
+            .tryMap { dependency, path -> [AnyArtifact] in
+                let xcFrameworks = try path
                     .recursiveChildren()
                     .filter { $0.extension == "xcframework" }
-                    .compactMap { framework -> Artifact? in
+                    .compactMap { framework -> AnyArtifact? in
                         let targetPath = Config.current.buildPath + framework.lastComponent
 
                         if targetPath.exists {
@@ -70,17 +70,48 @@ public final class BinaryProcessor: DependencyProcessor {
 
                         try framework.copy(targetPath)
 
-                        return Artifact(
+                        return AnyArtifact(Artifact(
                             name: targetPath.lastComponentWithoutExtension,
+                            parentName: dependency.name,
                             version: dependency.version,
                             path: targetPath
-                        )
+                        ))
                     }
+
+                if xcFrameworks.isEmpty {
+                    return try path
+                        .recursiveChildren()
+                        .filter { $0.extension == "framework" }
+                        .compactMap { framework -> AnyArtifact? in
+                            let targetPath = Config.current.buildPath + "\(framework.lastComponentWithoutExtension).xcframework"
+
+                            if targetPath.exists {
+                                try targetPath.delete()
+                            }
+
+                            if let excludes = dependency.excludes,
+                               excludes.contains(framework.lastComponentWithoutExtension) {
+
+                                return nil
+                            }
+
+                            _ = try self.convertUniversalFrameworkToXCFramework(input: framework)
+
+                            return AnyArtifact(Artifact(
+                                name: targetPath.lastComponentWithoutExtension,
+                                parentName: dependency.name,
+                                version: dependency.version,
+                                path: targetPath
+                            ))
+                        }
+                }
+
+                return xcFrameworks
             }
             .collect()
             .map { $0.flatMap { $0 } }
             .tryMap { artifacts in
-                let filtered: [Artifact] = artifacts
+                let filtered: [AnyArtifact] = artifacts
                     .reduce(into: []) { acc, next in
                         if !acc.contains(where: { $0.name == next.name }) {
                             acc.append(next)
@@ -162,7 +193,7 @@ public final class BinaryProcessor: DependencyProcessor {
     }
 
     private func decompress(dependency: BinaryDependency, at path: Path) throws -> Path {
-        let targetPath = Config.current.cachePath + Path(dependency.url.path).lastComponentWithoutExtension
+        let targetPath = Config.current.cachePath + Path(dependency.url.path).lastComponent.components(separatedBy: ".")[0]
 
         if options.skipClean, targetPath.exists {
             return targetPath
@@ -190,5 +221,71 @@ public final class BinaryProcessor: DependencyProcessor {
         }
 
         return targetPath
+    }
+
+    private func convertUniversalFrameworkToXCFramework(input: Path) throws -> [Path] {
+        let frameworkName = input.lastComponentWithoutExtension
+        let binaryPath = input + frameworkName
+
+        guard binaryPath.exists else {
+            throw ScipioError.invalidFramework(input.lastComponent)
+        }
+
+        let rawArchitectures = try sh("xcrun lipo -i \(binaryPath.quoted)")
+            .waitForOutputString()
+            .components(separatedBy: ":")
+            .last?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: " ") ?? []
+        let architectures = rawArchitectures
+            .compactMap { Architecture(rawValue: $0) }
+        let unknownArchitectures = rawArchitectures
+            .filter { Architecture(rawValue: $0) == nil }
+
+        guard architectures == Architecture.allCases else {
+            throw ScipioError.missingArchitectures(
+                input.lastComponent,
+                Array(Set(Architecture.allCases).subtracting(Set(architectures)))
+            )
+        }
+
+        let platformSDKs = options.platforms.flatMap(\.sdks).uniqued()
+
+        // TODO: Support macOS and tvOS
+        guard platformSDKs.count == 2,
+              platformSDKs.contains(.iphoneos),
+              platformSDKs.contains(.iphonesimulator) else {
+
+            fatalError("Only iOS is supported right now")
+        }
+
+        let sdkArchitectures = architectures.sdkArchitectures
+        let sdks = Set(platformSDKs).intersection(sdkArchitectures.keys)
+
+        let archivePaths = try sdks.map { sdk -> Path in
+            let archivePath = Config.current.buildPath + "\(frameworkName)-\(sdk.rawValue)/"
+            let frameworksFolder = archivePath + "Products/Library/Frameworks"
+
+            if archivePath.exists {
+                try archivePath.delete()
+            }
+
+            try frameworksFolder.mkpath()
+
+            try input.copy(frameworksFolder + input.lastComponent)
+
+            let removeArchs = Set(architectures).subtracting(sdk.architectures)
+            let removeArgs = (removeArchs
+                .map(\.rawValue) + unknownArchitectures)
+                .map { "-remove \($0)" }
+            let sdkBinaryPath = frameworksFolder + "\(input.lastComponent)/\(frameworkName)"
+
+            try sh("xcrun lipo \(removeArgs.joined(separator: " ")) \(binaryPath.quoted) -o \(sdkBinaryPath.quoted)")
+                .waitUntilExit()
+
+            return archivePath
+        }
+
+        return try Xcode.createXCFramework(archivePaths: archivePaths, skipIfExists: options.skipClean)
     }
 }

@@ -5,43 +5,82 @@ public struct SwiftPackageFile {
     var name: String
     var path: Path
     var platforms: [Platform: String]
-    var products: [Product]
-    var targets: [Target]
+    var products: [Product] = []
+    var targets: [Target] = []
 
-    public init(name: String, path: Path, platforms: [Platform: String], artifacts: [CachedArtifact]) throws {
+    var artifacts: [CachedArtifact]
+    var removeMissing: Bool
+
+    public init(name: String, path: Path, platforms: [Platform: String], artifacts: [CachedArtifact], removeMissing: Bool) throws {
         self.name = name
-        self.path = path + "Package.swift"
+        self.path = path.lastComponent == "Package.swift" ? path : path + "Package.swift"
         self.platforms = platforms
+        self.artifacts = artifacts
+        self.removeMissing = removeMissing
 
-        let manifest = path.exists ? try? PackageManifest.load(from: path) : nil
-        let sortedArtifacts = artifacts
+        try read()
+    }
+
+    public mutating func read() throws {
+        let manifest = path.exists ? try PackageManifest.load(from: path.parent()) : nil
+        var artifactsAndTargets: [(name: String, artifact: CachedArtifact?, target: Target?)] = manifest?
+            .targets
+            .compactMap { target -> (String, CachedArtifact?, Target?)? in
+                if let artifact = artifacts.first(where: { $0.name == target.name }) {
+                    return (artifact.name, artifact, nil)
+                } else if !removeMissing {
+                    return (target.name, nil, Target(target))
+                } else {
+                    return nil
+                }
+            } ?? artifacts.map { ($0.name, $0, nil) }
+
+        if let targets = manifest?.targets.map(\.name) {
+            for artifact in artifacts where !targets.contains(artifact.name) {
+                artifactsAndTargets <<< (artifact.name, artifact, nil)
+            }
+        }
+
+        let sortedArtifacts = artifactsAndTargets
             .sorted { $0.name < $1.name }
 
         products = sortedArtifacts
             .map { Product(name: $0.name, targets: [$0.name]) }
 
-        targets = sortedArtifacts
-            .map { artifact in
-                if let checksum = artifact.checksum {
-                    return Target(
-                        name: artifact.name,
-                        url: artifact.url,
-                        checksum: checksum
-                    )
-                } else if let checksum = manifest?.targets.first(where: { $0.name == artifact.name })?.checksum {
-                    return Target(
-                        name: artifact.name,
-                        url: artifact.url,
-                        checksum: checksum
-                    )
-                } else if artifact.url.isFileURL {
-                    return Target(
-                        name: artifact.name,
-                        url: artifact.url,
-                        checksum: nil
-                    )
+        targets = try sortedArtifacts
+            .map { name, artifact, target in
+                if let artifact = artifact {
+                    if let checksum = artifact.checksum {
+                        return Target(
+                            name: name,
+                            url: artifact.url,
+                            checksum: checksum
+                        )
+                    } else if let checksum = manifest?.targets.first(where: { $0.name == name })?.checksum {
+                        return Target(
+                            name: name,
+                            url: artifact.url,
+                            checksum: checksum
+                        )
+                    } else if artifact.url.isFileURL {
+                        return Target(
+                            name: name,
+                            url: artifact.url,
+                            checksum: nil
+                        )
+                    } else {
+                        let existingPath = Config.current.buildPath + "\(name).xcframework.zip"
+
+                        if existingPath.exists {
+                            return Target(name: name, url: artifact.url, checksum: try existingPath.checksum(.sha256))
+                        }
+
+                        fatalError("Missing checksum for \(artifact.name)")
+                    }
+                } else if let target = target {
+                    return target
                 } else {
-                    fatalError("Missing checksum for \(artifact.name)")
+                    fatalError()
                 }
             }
     }
@@ -95,6 +134,25 @@ extension SwiftPackageFile {
         public var name: String
         public var url: URL
         public var checksum: String?
+
+        public init(_ target: PackageManifest.Target) {
+            name = target.name
+            checksum = target.checksum
+
+            if let urlString = target.url, let url = URL(string: urlString) {
+                self.url = url
+            } else if let path = target.path {
+                self.url = URL(fileURLWithPath: path)
+            } else {
+                fatalError()
+            }
+        }
+
+        public init(name: String, url: URL, checksum: String?) {
+            self.name = name
+            self.url = url
+            self.checksum = checksum
+        }
 
         func asString(indenting: String) -> String {
             if url.isFileURL {

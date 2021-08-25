@@ -33,7 +33,7 @@ public final class CocoaPodProcessor: DependencyProcessor {
         .eraseToAnyPublisher()
     }
 
-    public func process(_ dependency: CocoaPodDependency?, resolvedTo resolvedDependency: CocoaPodDescriptor) -> AnyPublisher<[Artifact], Error> {
+    public func process(_ dependency: CocoaPodDependency?, resolvedTo resolvedDependency: CocoaPodDescriptor) -> AnyPublisher<[AnyArtifact], Error> {
         return Future.try {
             let derivedDataPath = Config.current.cachePath + "DerivedData" + Config.current.name
 
@@ -56,16 +56,17 @@ public final class CocoaPodProcessor: DependencyProcessor {
                 return try Xcode.createXCFramework(
                     archivePaths: archivePaths,
                     skipIfExists: self.options.skipClean,
-                    filter: { !$0.hasPrefix("Pods_") && $0 != "\(resolvedDependency.name)-\(platform.rawValue)" }
+                    filter: { !$0.hasPrefix("Pods_") && $0 != "\(resolvedDependency.name)-\(platform.rawValue)" && resolvedDependency.productNames?.contains($0) == true }
                 )
             }
 
             return paths.compactMap { path in
-                return Artifact(
+                return AnyArtifact(Artifact(
                     name: path.lastComponentWithoutExtension,
+                    parentName: resolvedDependency.name,
                     version: resolvedDependency.version(for: path.lastComponentWithoutExtension),
                     path: path
-                )
+                ))
             }
         }
         .eraseToAnyPublisher()
@@ -146,6 +147,7 @@ project '\(projectPath.string)'
                 name: dependency.name,
                 resolvedVersions: versions,
                 productNames: productNames
+                    .filter { dependency.excludes?.contains($0) != true }
             )
         }
     }

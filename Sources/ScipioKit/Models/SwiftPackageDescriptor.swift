@@ -56,6 +56,8 @@ public struct PackageManifest: Codable, Equatable {
     public let targets: [Target]
 
     public static func load(from path: Path) throws -> PackageManifest {
+        precondition(path.isDirectory)
+        
         let cachedManifestPath = Config.current.cachePath + "\(path.lastComponent)-\(try (path + "Package.swift").checksum(.sha256)).json"
         let data: Data
         if cachedManifestPath.exists {
@@ -86,7 +88,7 @@ public struct PackageManifest: Codable, Equatable {
         }
 
         return targets
-            .map { $0.name == product.name && $0.type != .binary ? .scheme($0.name) : .target($0.name) }
+            .map { .target($0.name) }
     }
 
     private func recursiveTargets(in product: Product) -> [PackageManifest.Target] {
@@ -203,14 +205,11 @@ extension PackageManifest {
 }
 
 public enum SwiftPackageBuildable: Equatable, Hashable {
-    case scheme(String)
     case target(String)
     case binaryTarget(PackageManifest.Target)
 
     public var name: String {
         switch self {
-        case .scheme(let name):
-            return name
         case .target(let name):
             return name
         case .binaryTarget(let target):

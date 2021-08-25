@@ -12,7 +12,7 @@ public protocol DependencyProcessor {
     init(dependencies: [Input], options: ProcessorOptions)
 
     func preProcess() -> AnyPublisher<[ResolvedInput], Error>
-    func process(_ dependency: Input?, resolvedTo resolvedDependency: ResolvedInput) -> AnyPublisher<[Artifact], Error>
+    func process(_ dependency: Input?, resolvedTo resolvedDependency: ResolvedInput) -> AnyPublisher<[AnyArtifact], Error>
     func postProcess() -> AnyPublisher<(), Error>
 }
 
@@ -24,14 +24,41 @@ public protocol DependencyProducts {
 }
 
 extension DependencyProcessor {
-    public func process(dependencies onlyDependencies: [Input]? = nil) -> AnyPublisher<[Artifact], Error> {
+    public func process(dependencies onlyDependencies: [Input]? = nil) -> AnyPublisher<[AnyArtifact], Error> {
         return preProcess()
-            .flatMap { dependencyProducts in
+            .tryFlatMap { dependencyProducts -> AnyPublisher<[[AnyArtifact]], Error> in
+
+                let conflictingDependencies: [String: [String]] = dependencyProducts
+                    .reduce(into: [:]) { accumulated, dependency in
+                        let productNames = Dictionary(
+                            uniqueKeysWithValues: (dependency.productNames ?? [])
+                                .map { ($0, [dependency.name]) }
+                        )
+
+                        accumulated.merge(productNames) { $0 + $1 }
+                    }
+                    .filter { $0.value.count > 1 }
+
+                if let conflict = conflictingDependencies.first {
+                    throw ScipioError.conflictingDependencies(
+                        product: conflict.key,
+                        conflictingDependencies: conflict.value
+                    )
+                }
+
                 return dependencyProducts
                     .publisher
                     .setFailureType(to: Error.self)
-                    .tryFlatMap(maxPublishers: .max(1)) { dependencyProduct -> AnyPublisher<[Artifact], Error> in
-                        let dependency = (onlyDependencies ?? dependencies).first(where: { $0.name == dependencyProduct.name })
+                    .tryFlatMap(maxPublishers: .max(1)) { dependencyProduct -> AnyPublisher<[AnyArtifact], Error> in
+                        let dependencies = onlyDependencies ?? self.dependencies
+                        let dependency = dependencies.first(where: { $0.name == dependencyProduct.name })
+
+                        if let onlyDependencies = onlyDependencies,
+                           !onlyDependencies.contains(where: { $0.name == dependencyProduct.name }) {
+                            return Empty()
+                                .setFailureType(to: Error.self)
+                                .eraseToAnyPublisher()
+                        }
 
                         guard let productNames = dependencyProduct.productNames else {
                             return self.process(dependency, resolvedTo: dependencyProduct)
@@ -54,22 +81,35 @@ extension DependencyProcessor {
                                     .eraseToAnyPublisher()
                             }
                             .collect()
-                            .flatMap { missingProducts -> AnyPublisher<[Artifact], Error> in
+                            .flatMap { missingProducts -> AnyPublisher<[AnyArtifact], Error> in
                                 if missingProducts.isEmpty {
-                                    return Just(productNames
-                                        .compactMap { productName in
+                                    return productNames
+                                        .publisher
+                                        .setFailureType(to: Error.self)
+                                        .tryFlatMap(maxPublishers: .max(1)) { productName -> AnyPublisher<AnyArtifact, Error> in
                                             let path = Config.current.buildPath + "\(productName).xcframework"
 
-                                            // TODO: Probably shouldn't fail silently here
-                                            guard path.exists else { return nil }
-
-                                            return Artifact(
-                                                name: productName,
-                                                version: dependencyProduct.version(for: productName),
-                                                path: path
-                                            )
-                                        })
-                                        .setFailureType(to: Error.self)
+                                            if path.exists, self.options.skipClean {
+                                                return Just(AnyArtifact(Artifact(
+                                                    name: productName,
+                                                    parentName: dependencyProduct.name,
+                                                    version: dependencyProduct.version(for: productName),
+                                                    path: path
+                                                )))
+                                                .setFailureType(to: Error.self)
+                                                .eraseToAnyPublisher()
+                                            } else {
+                                                return Config.current.cacheDelegator
+                                                    .get(
+                                                        product: productName,
+                                                        in: dependencyProduct.name,
+                                                        version: dependencyProduct.version(for: productName),
+                                                        destination: path
+                                                    )
+                                                    .eraseToAnyPublisher()
+                                            }
+                                        }
+                                        .collect()
                                         .eraseToAnyPublisher()
                                 } else {
                                     return self.process(dependency, resolvedTo: dependencyProduct)
@@ -100,14 +140,20 @@ public struct ProcessorOptions {
 
 public protocol ArtifactProtocol {
     var name: String { get }
+    var parentName: String { get }
     var version: String { get }
     var resource: URL { get }
 }
 
 public struct AnyArtifact: ArtifactProtocol {
     public let name: String
+    public let parentName: String
     public let version: String
     public let resource: URL
+
+    public var path: Path {
+        return Path(resource.path)
+    }
 
     public let base: Any
 
@@ -115,6 +161,7 @@ public struct AnyArtifact: ArtifactProtocol {
         self.base = base
         
         name = base.name
+        parentName = base.parentName
         version = base.version
         resource = base.resource
     }
@@ -122,6 +169,7 @@ public struct AnyArtifact: ArtifactProtocol {
 
 public struct Artifact: ArtifactProtocol {
     public let name: String
+    public let parentName: String
     public let version: String
     public let path: Path
 
@@ -130,6 +178,7 @@ public struct Artifact: ArtifactProtocol {
 
 public struct CompressedArtifact: ArtifactProtocol {
     public let name: String
+    public let parentName: String
     public let version: String
     public let path: Path
 
@@ -142,18 +191,25 @@ public struct CompressedArtifact: ArtifactProtocol {
 
 public struct CachedArtifact {
     public let name: String
+    public let parentName: String
     public let url: URL
     public let checksum: String?
 
-    init(name: String, url: URL, localPath: Path) throws {
+    internal var localPath: Path?
+
+    init(name: String, parentName: String, url: URL, localPath: Path) throws {
         self.name = name
+        self.parentName = parentName
         self.url = url
         self.checksum = try localPath.checksum(.sha256)
+        self.localPath = localPath
     }
 
-    init(name: String, url: URL) {
+    init(name: String, parentName: String, url: URL) {
         self.name = name
+        self.parentName = parentName
         self.url = url
         self.checksum = nil
+        self.localPath = nil
     }
 }

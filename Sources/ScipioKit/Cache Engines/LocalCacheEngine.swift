@@ -40,12 +40,16 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
 
                 try artifact.path.copy(cachePath)
 
-                return CachedArtifact(name: artifact.name, url: cachePath.url)
+                return CachedArtifact(
+                    name: artifact.name,
+                    parentName: artifact.parentName,
+                    url: cachePath.url
+                )
             }
             .eraseToAnyPublisher()
     }
 
-    public func get(product: String, version: String, destination: Path) -> AnyPublisher<Artifact, Error> {
+    public func get(product: String, in parentName: String, version: String, destination: Path) -> AnyPublisher<Artifact, Error> {
         let cachePath = localPath(for: product, version: version)
 
         return Just(cachePath)
@@ -55,6 +59,7 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
 
                     return Artifact(
                         name: product,
+                        parentName: parentName,
                         version: version,
                         path: destination
                     )

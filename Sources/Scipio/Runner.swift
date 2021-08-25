@@ -4,14 +4,14 @@ import ScipioKit
 
 enum Runner {
 
-    static func build(dependencies: [String]?, platforms: [Platform], force: Bool, skipClean: Bool) throws -> [Artifact] {
+    static func build(dependencies: [String]?, platforms: [Platform], force: Bool, skipClean: Bool) throws -> [AnyArtifact] {
         let processorOptions = ProcessorOptions(
             platforms: platforms,
             force: force,
             skipClean: skipClean
         )
 
-        var artifacts: [Artifact] = []
+        var artifacts: [AnyArtifact] = []
 
         if let packages = Config.current.packages, !packages.isEmpty {
             let processor = PackageProcessor(dependencies: packages, options: processorOptions)
@@ -37,18 +37,19 @@ enum Runner {
         return artifacts
     }
 
-    static func upload(artifacts: [Artifact], force: Bool) throws -> [CachedArtifact] {
+    static func upload(artifacts: [AnyArtifact], force: Bool, skipClean: Bool) throws -> [CachedArtifact] {
         return try Config.current.cacheDelegator
-            .upload(artifacts, force: force)
+            .upload(artifacts, force: force, skipClean: skipClean)
             .wait() ?? []
     }
 
-    static func updatePackageManifest(at path: Path, with artifacts: [CachedArtifact]) throws {
+    static func updatePackageManifest(at path: Path, with artifacts: [CachedArtifact], removeMissing: Bool) throws {
         let packageFile = try SwiftPackageFile(
             name: Config.current.name,
             path: path,
             platforms: Config.current.platformVersions,
-            artifacts: artifacts
+            artifacts: artifacts,
+            removeMissing: removeMissing
         )
 
         try packageFile.write()
