@@ -7,7 +7,7 @@ struct Xcode {
         return Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
     }
 
-    static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path) throws -> Path {
+    static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path, sourcePackagesPath: Path? = nil) throws -> Path {
 
         let buildSettings: [String: String] = [
             "BUILD_LIBRARY_FOR_DISTRIBUTION": "YES",
@@ -27,6 +27,7 @@ struct Xcode {
             scheme: scheme,
             archivePath: archivePath.string,
             derivedDataPath: derivedDataPath.string,
+            clonedSourcePackageDirectory: sourcePackagesPath?.string,
             sdk: sdk,
             additionalBuildSettings: buildSettings
         )

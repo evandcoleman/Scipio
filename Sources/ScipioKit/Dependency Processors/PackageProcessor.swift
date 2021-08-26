@@ -16,6 +16,10 @@ public final class PackageProcessor: DependencyProcessor {
         return Config.current.cachePath + "DerivedData" + Config.current.name
     }
 
+    private var sourcePackagesPath: Path {
+        return Config.current.cachePath + "SourcePackages" + Config.current.name
+    }
+
     private let urlSession: URLSession = .createWithExtensionsSupport()
 
     public init(dependencies: [PackageDependency], options: ProcessorOptions) {
@@ -31,9 +35,9 @@ public final class PackageProcessor: DependencyProcessor {
                 try self.derivedDataPath.mkpath()
             }
 
-            try self.resolvePackageDependencies(in: projectPath, derivedDataPath: self.derivedDataPath)
+            try self.resolvePackageDependencies(in: projectPath, sourcePackagesPath: self.sourcePackagesPath)
 
-            return try self.readPackages(derivedDataPath: self.derivedDataPath)
+            return try self.readPackages(sourcePackagesPath: self.sourcePackagesPath)
         }
         .eraseToAnyPublisher()
     }
@@ -166,23 +170,23 @@ public final class PackageProcessor: DependencyProcessor {
         return projectPath
     }
 
-    private func resolvePackageDependencies(in project: Path, derivedDataPath: Path) throws {
+    private func resolvePackageDependencies(in project: Path, sourcePackagesPath: Path) throws {
         log.info("📦 Resolving dependencies...")
 
         let command = Xcodebuild(
             command: .resolvePackageDependencies,
             project: project.string,
-            clonedSourcePackageDirectory: (derivedDataPath + "SourcePackages").string
+            clonedSourcePackageDirectory: sourcePackagesPath.string
         )
 
         try command.run()
     }
 
-    private func readPackages(derivedDataPath: Path) throws -> [SwiftPackageDescriptor] {
+    private func readPackages(sourcePackagesPath: Path) throws -> [SwiftPackageDescriptor] {
         log.info("🧮 Loading Swift packages...")
 
         let decoder = JSONDecoder()
-        let workspacePath = derivedDataPath + "SourcePackages" + "workspace-state.json"
+        let workspacePath = sourcePackagesPath + "workspace-state.json"
         let workspaceState = try decoder.decode(WorkspaceState.self, from: try workspacePath.read())
 
         return try workspaceState.object
@@ -329,6 +333,7 @@ public final class PackageProcessor: DependencyProcessor {
                 let moduleMapDirectory = archiveIntermediatesPath + "IntermediateBuildFilesPath/\(package.name).build/Release-\(sdk.rawValue)/\(frameworkName).build"
                 var moduleMapPath = moduleMapDirectory.glob("*.modulemap").first
                 var moduleMapContent = "module \(frameworkName) { export * }"
+                var includeDirectory: Path? = nil
 
                 // If we can't find the generated modulemap, we check
                 // to see if the package includes its own.
@@ -337,12 +342,17 @@ public final class PackageProcessor: DependencyProcessor {
                    target.type != .binary,
                    let path = target.path {
 
-                    moduleMapPath = try Path(path)
+                    moduleMapPath = try (package.path + Path(path))
+                        .normalize()
                         .recursiveChildren()
                         .filter { $0.extension == "modulemap" }
                         .first
-                }
 
+                    if let moduleMapPath = moduleMapPath, moduleMapPath.parent().lastComponent == "include" {
+                        includeDirectory = moduleMapPath.parent()
+                    }
+                }
+                
                 if let moduleMapPath = moduleMapPath, moduleMapPath.exists {
                     let umbrellaHeaderRegex = Regex(#"umbrella (?:header )?"(.*)""#)
                     let umbrellaHeaderMatch = umbrellaHeaderRegex.firstMatch(in: try moduleMapPath.read())
@@ -351,6 +361,9 @@ public final class PackageProcessor: DependencyProcessor {
                        let umbrellaHeaderPathString = match.captures[0] {
 
                         var umbrellaHeaderPath = Path(umbrellaHeaderPathString)
+                        if umbrellaHeaderPath.isRelative {
+                            umbrellaHeaderPath = (moduleMapPath.parent() + umbrellaHeaderPath).normalize()
+                        }
                         var sourceHeadersDirectory = umbrellaHeaderPath.isFile ? umbrellaHeaderPath.parent() : umbrellaHeaderPath + frameworkName
 
                         if umbrellaHeaderPath.isDirectory, !sourceHeadersDirectory.exists {
@@ -366,13 +379,13 @@ public final class PackageProcessor: DependencyProcessor {
                         // its headers using <Framework/Header.h> syntax.
                         // And then we recusively look through the header files for
                         // imports to gather a list of files to include.
-                        if umbrellaHeaderPath.isFile {
+                        if umbrellaHeaderPath.isFile, includeDirectory == nil {
                             let headerContent = try umbrellaHeaderPath
                                 .read()
                                 .replacingFirst(matching: Regex(#"^#import "(.*).h""#, options: [.anchorsMatchLines]), with: "#import <\(frameworkName)/$1.h>")
                             let path = headersPath + umbrellaHeaderPath.lastComponent
                             try path.write(headerContent)
-                        } else {
+                        } else if includeDirectory == nil {
                             umbrellaHeaderPath = headersPath + "\(frameworkName).h"
                             let umbrellaHeaderContent = sourceHeadersDirectory
                                 .glob("*.h")
@@ -381,7 +394,15 @@ public final class PackageProcessor: DependencyProcessor {
                             try umbrellaHeaderPath.write(umbrellaHeaderContent)
                         }
 
-                        let allHeaderPaths = try getHeaders(in: umbrellaHeaderPath, frameworkName: frameworkName, sourceHeadersDirectory: sourceHeadersDirectory)
+                        let allHeaderPaths: [Path]
+
+                        if let includeDirectory = includeDirectory {
+                            allHeaderPaths = try (includeDirectory + frameworkName)
+                                .recursiveChildren()
+                                .filter { $0.extension == "h" }
+                        } else {
+                            allHeaderPaths = try getHeaders(in: umbrellaHeaderPath, frameworkName: frameworkName, sourceHeadersDirectory: sourceHeadersDirectory)
+                        }
 
                         if !headersPath.exists, !allHeaderPaths.isEmpty {
                             try headersPath.mkdir()

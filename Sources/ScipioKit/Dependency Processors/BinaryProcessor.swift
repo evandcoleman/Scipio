@@ -197,7 +197,11 @@ public final class BinaryProcessor: DependencyProcessor {
 
         if options.skipClean, targetPath.exists {
             return targetPath
+        } else if targetPath.exists {
+            try targetPath.delete()
         }
+
+        log.info("Decompressing \(path.lastComponent)...")
 
         switch dependency.url.pathExtension {
         case "zip":
@@ -206,7 +210,7 @@ public final class BinaryProcessor: DependencyProcessor {
             let gunzippedPath = try path.gunzipped()
 
             if gunzippedPath.extension == "tar" {
-                let untaredPath = try gunzippedPath.untar(progress: { log.progress("Untaring \(gunzippedPath.lastComponent)", percent: $0) })
+                let untaredPath = try gunzippedPath.untar()
 
                 if !targetPath.exists {
                     try untaredPath.move(targetPath)
@@ -263,7 +267,7 @@ public final class BinaryProcessor: DependencyProcessor {
         let sdks = Set(platformSDKs).intersection(sdkArchitectures.keys)
 
         let archivePaths = try sdks.map { sdk -> Path in
-            let archivePath = Config.current.buildPath + "\(frameworkName)-\(sdk.rawValue)/"
+            let archivePath = Config.current.buildPath + "\(frameworkName)-\(sdk.rawValue)"
             let frameworksFolder = archivePath + "Products/Library/Frameworks"
 
             if archivePath.exists {

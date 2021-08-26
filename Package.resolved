@@ -11,6 +11,15 @@
         }
       },
       {
+        "package": "BitByteData",
+        "repositoryURL": "https://github.com/tsolomko/BitByteData",
+        "state": {
+          "branch": null,
+          "revision": "c119e12decae8f56066df3345a4ac1a05b2f06d5",
+          "version": "2.0.1"
+        }
+      },
+      {
         "package": "Colorizer",
         "repositoryURL": "https://github.com/getGuaka/Colorizer.git",
         "state": {
@@ -26,15 +35,6 @@
           "branch": null,
           "revision": "70bebcf4597b9ce33e19816d6bbd4ba9b7bdf038",
           "version": "0.2.0"
-        }
-      },
-      {
-        "package": "Gzip",
-        "repositoryURL": "https://github.com/1024jp/GzipSwift",
-        "state": {
-          "branch": null,
-          "revision": "ba0b6cb51cc6202f896e469b87d2889a46b10d1b",
-          "version": "5.1.1"
         }
       },
       {
@@ -80,6 +80,15 @@
           "branch": null,
           "revision": "f79d4ecbf8bc4e1579fbd86c3e1d652fb6876c53",
           "version": "0.9.2"
+        }
+      },
+      {
+        "package": "SWCompression",
+        "repositoryURL": "https://github.com/tsolomko/SWCompression.git",
+        "state": {
+          "branch": null,
+          "revision": "ff8113eb32ac04124b06372f030c08efdfcfc9fc",
+          "version": "4.6.0"
         }
       },
       {
