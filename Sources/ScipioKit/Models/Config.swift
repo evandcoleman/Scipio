@@ -90,6 +90,10 @@ public struct Config: Decodable, Equatable {
             config._path = path
             Config.current = config
 
+            if !config.buildPath.exists {
+                try config.buildPath.mkpath()
+            }
+
             return config
         } catch {
             log.fatal("Error read config file at path \(path): \(error)")

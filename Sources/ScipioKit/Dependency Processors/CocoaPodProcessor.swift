@@ -121,7 +121,7 @@ project '\(projectPath.string)'
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
         try path.chdir {
-            try sh("LANG=en_US.UTF-8 /Users/ecoleman/.rbenv/shims/pod install")
+            try sh("LANG=en_US.UTF-8 pod install")
                 .logOutput()
                 .waitUntilExit()
         }
