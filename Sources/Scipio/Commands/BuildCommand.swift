@@ -26,7 +26,7 @@ extension Command {
 
             _ = try Runner.build(
                 dependencies: options.packages,
-                platforms: buildOptions.platform,
+                platforms: Config.current.platforms,
                 force: options.force || buildOptions.forceBuild,
                 skipClean: options.skipClean
             )
@@ -36,9 +36,6 @@ extension Command {
 
 extension Command.Build {
     struct Options: ParsableArguments {
-        @Option(help: "The platforms to build for", transform: { $0.components(separatedBy: ",").compactMap { Platform(rawValue: $0) } })
-        var platform: [Platform]
-
         @Flag(help: "If true will force building dependencies")
         var forceBuild: Bool = false
     }

@@ -37,6 +37,10 @@ public struct Config: Decodable, Equatable {
             }
     }
 
+    public var platforms: [Platform] {
+        return Array(platformVersions.keys)
+    }
+
     public let cachePath: Path = {
         let path = Path(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].path) + "Scipio"
 

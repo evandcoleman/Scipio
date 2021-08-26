@@ -10,7 +10,7 @@ extension Command {
       .init(
         commandName: "Scipio",
         abstract: "A program to pre-build and cache Swift packages",
-        version: "0.1.0",
+        version: "0.1.1",
         subcommands: [
             Command.Build.self,
             Command.Upload.self,
@@ -34,7 +34,7 @@ extension Command {
 
         let artifacts = try Runner.build(
             dependencies: options.packages,
-            platforms: buildOptions.platform,
+            platforms: Config.current.platforms,
             force: options.force || buildOptions.forceBuild,
             skipClean: options.skipClean
         ).filter { artifact in
