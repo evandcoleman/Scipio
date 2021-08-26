@@ -227,8 +227,8 @@ public final class PackageProcessor: DependencyProcessor {
 
         let archivePaths = try options.platforms.sdks.map { sdk -> Path in
 
-            if options.skipClean, Xcode.archivePath(for: buildable.name, sdk: sdk).exists {
-                return Xcode.archivePath(for: buildable.name, sdk: sdk)
+            if options.skipClean, Xcode.getArchivePath(for: buildable.name, sdk: sdk).exists {
+                return Xcode.getArchivePath(for: buildable.name, sdk: sdk)
             }
 
             if path == nil {

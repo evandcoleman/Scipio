@@ -3,7 +3,7 @@ import Foundation
 import PathKit
 
 struct Xcode {
-    static func archivePath(for scheme: String, sdk: Xcodebuild.SDK) -> Path {
+    static func getArchivePath(for scheme: String, sdk: Xcodebuild.SDK) -> Path {
         return Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
     }
 
@@ -16,7 +16,7 @@ struct Xcode {
             "INSTALL_PATH": "/Library/Frameworks"
         ]
 
-        let archivePath = archivePath(for: scheme, sdk: sdk)
+        let archivePath = getArchivePath(for: scheme, sdk: sdk)
 
         log.info("🏗  Building \(scheme)-\(sdk.rawValue)...")
 

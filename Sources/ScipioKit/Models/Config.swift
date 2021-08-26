@@ -22,7 +22,7 @@ public struct Config: Decodable, Equatable {
         if let buildDirectory = buildDirectory {
             return Path(buildDirectory)
         } else {
-            return Path.current + "build"
+            return Path.current + ".scipio"
         }
     }
 

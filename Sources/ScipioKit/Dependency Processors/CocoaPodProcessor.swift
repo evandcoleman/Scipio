@@ -41,8 +41,8 @@ public final class CocoaPodProcessor: DependencyProcessor {
                 let archivePaths = try platform.sdks.map { sdk -> Path in
                     let scheme = "\(resolvedDependency.name)-\(platform.rawValue)"
 
-                    if self.options.skipClean, Xcode.archivePath(for: scheme, sdk: sdk).exists {
-                        return Xcode.archivePath(for: scheme, sdk: sdk)
+                    if self.options.skipClean, Xcode.getArchivePath(for: scheme, sdk: sdk).exists {
+                        return Xcode.getArchivePath(for: scheme, sdk: sdk)
                     }
 
                     return try Xcode.archive(
