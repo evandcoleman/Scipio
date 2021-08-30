@@ -87,7 +87,7 @@ public final class Log: NSObject {
             .joined() + "] \(Int((percent * 100).rounded()))%"
 
         if percent >= 1 {
-            self.log(level: .success, file: file, line: line, column: column, [fullMessage])
+            self.log(level: .success, terminator: "\r\n", file: file, line: line, column: column, [fullMessage])
         } else {
             self.log(level: .info, terminator: "\r", file: file, line: line, column: column, [fullMessage])
         }

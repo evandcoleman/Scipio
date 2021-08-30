@@ -91,7 +91,7 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
                     .eraseToAnyPublisher()
             } else {
                 return self.cache
-                    .get(product: product, in: parentName, version: version, destination: destination)
+                    .get(product: product, in: parentName, version: version, destination: normalizedDestination)
                     .tryMap { artifact in
                         try self.versionCachePath(for: artifact.name, version: artifact.version)
                             .write(artifact.path.checksum(.sha256))
