@@ -18,59 +18,28 @@ jobs:
       id: update_formula
       run: |
         VERSION=${GITHUB_REF/refs\/tags\//}
-        REPO_PATH=$(pwd)
         URL="https://github.com/evandcoleman/Scipio/archive/refs/tags/$VERSION.tar.gz"
-        brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/evandcoleman/homebrew-tap.git
-        FORMULA_DIR=/usr/local/Homebrew/Library/Taps/evandcoleman/homebrew-tap/Formula
-        [ ! -d $FORMULA_DIR ] && mkdir -p $FORMULA_DIR
-        cd $FORMULA_DIR
-        [ ! -f "./scipio.rb" ] && cp $REPO_PATH/scipio.rb ./scipio.rb
+        TAP_REPO="evandcoleman/homebrew-tap"
+        REPO_PATH=$(pwd)
+
+        brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/$TAP_REPO.git
+        cd $(brew --repository $TAP_REPO)
+        
+        git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
+        git config --global user.name $GITHUB_ACTOR
+        git checkout -b formula/scipio/$VERSION
+
         sed -E -i '' 's~^  url ".*"~  url "'$URL\"~ ./scipio.rb
         brew fetch ./scipio.rb || true
         SHA256=$(shasum --algorithm 256 $(brew --cache --build-from-source ./scipio.rb) | awk '{print $1}')
         sed -E -i '' 's/^  sha256 ".*"/  sha256 "'$SHA256\"/ ./scipio.rb
-        git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
-        git config --global user.name $GITHUB_ACTOR
-        git checkout -b formula/scipio/$VERSION
-        brew install --build-bottle ./scipio.rb
-        brew bottle --json --root-url=https://github.com/evandcoleman/Scipio/releases/download/$VERSION ./scipio.rb
-        FILE=$(ls -d *.bottle.tar.gz | head -1)
-        mv "$FILE" "$(echo "$FILE" | sed s/--/-/)"
-        BOTTLE=$(ls -d $PWD/*.bottle.tar.gz | head -1)
-        BOTTLE_JSON=$(ls -d $PWD/*.bottle.json | head -1)
-        brew bottle --merge $BOTTLE_JSON --write --no-commit
-        git add scipio.rb
+        
+        git add Formula/scipio.rb
         git commit -m "scipio $VERSION"
         git push origin formula/scipio/$VERSION
-        BOTTLE_SHA256=$(shasum --algorithm 256 $BOTTLE | awk '{print $1}')
-        BOTTLE_NAME=$(basename $BOTTLE)
-        echo ::set-output name=bottle::$BOTTLE
-        echo ::set-output name=bottle_name::$BOTTLE_NAME
-        echo ::set-output name=bottle_json::$BOTTLE_JSON
-        echo ::set-output name=bottle_sha::$BOTTLE_SHA256
       env:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
-    - name: Upload Release Asset
-      id: upload-release-asset 
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }} 
-        asset_path: ${{ steps.update_formula.outputs.bottle }} 
-        asset_name: ${{ steps.update_formula.outputs.bottle_name }} 
-        asset_content_type: application/gzip
     - name: Open Pull Request
       id: open_pull_request
       run: |
