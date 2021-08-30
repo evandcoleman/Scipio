@@ -29,10 +29,10 @@ jobs:
         git config --global user.name $GITHUB_ACTOR
         git checkout -b formula/scipio/$VERSION
 
-        sed -E -i '' 's~^  url ".*"~  url "'$URL\"~ ./scipio.rb
-        brew fetch ./scipio.rb || true
-        SHA256=$(shasum --algorithm 256 $(brew --cache --build-from-source ./scipio.rb) | awk '{print $1}')
-        sed -E -i '' 's/^  sha256 ".*"/  sha256 "'$SHA256\"/ ./scipio.rb
+        sed -E -i '' 's~^  url ".*"~  url "'$URL\"~ Formula/scipio.rb
+        brew fetch Formula/scipio.rb || true
+        SHA256=$(shasum --algorithm 256 $(brew --cache --build-from-source Formula/scipio.rb) | awk '{print $1}')
+        sed -E -i '' 's/^  sha256 ".*"/  sha256 "'$SHA256\"/ Formula/scipio.rb
         
         git add Formula/scipio.rb
         git commit -m "scipio $VERSION"
