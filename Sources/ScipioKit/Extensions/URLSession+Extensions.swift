@@ -48,9 +48,8 @@ private final class Delegate: NSObject, URLSessionDownloadDelegate, URLSessionDa
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         if let url = downloadTask.originalRequest?.url,
-           let (progressHandler, completionHandler) = downloadRequests[url] {
+           let (_, completionHandler) = downloadRequests[url] {
 
-            progressHandler(1)
             completionHandler(location, downloadTask.response, downloadTask.error)
             downloadRequests.removeValue(forKey: url)
         }
@@ -75,9 +74,8 @@ private final class Delegate: NSObject, URLSessionDownloadDelegate, URLSessionDa
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         if let url = dataTask.originalRequest?.url,
-           let (progressHandler, completionHandler) = uploadRequests[url] {
+           let (_, completionHandler) = uploadRequests[url] {
 
-            progressHandler(1)
             completionHandler(data, dataTask.response, nil)
             uploadRequests.removeValue(forKey: url)
         }

@@ -16,6 +16,8 @@ public final class BinaryProcessor: DependencyProcessor {
     }
 
     public func preProcess() -> AnyPublisher<[BinaryDependency], Error> {
+        log.info("🔗  Processing binary dependencies...")
+
         return Just(dependencies)
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
@@ -163,7 +165,7 @@ public final class BinaryProcessor: DependencyProcessor {
 
         return Future<URL, Error> { promise in
             let task = self.urlSession
-                .downloadTask(with: url, progressHandler: { log.progress("Downloading \(url.lastPathComponent)", percent: $0) }) { url, response, error in
+                .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
                     if let error = error {
                         promise(.failure(error))
                     } else if let url = url {
@@ -172,6 +174,8 @@ public final class BinaryProcessor: DependencyProcessor {
                         log.fatal("Unexpected download result")
                     }
                 }
+
+            log.info("Downloading \(url.lastPathComponent):")
 
             task.resume()
         }
@@ -205,7 +209,7 @@ public final class BinaryProcessor: DependencyProcessor {
 
         switch dependency.url.pathExtension {
         case "zip":
-            try Zip.unzipFile(path.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress("Decompressing \(path.lastComponent)", percent: $0) })
+            try Zip.unzipFile(path.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress(percent: $0) })
         case "gz":
             let gunzippedPath = try path.gunzipped()
 

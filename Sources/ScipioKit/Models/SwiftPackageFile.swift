@@ -2,14 +2,20 @@ import Foundation
 import PathKit
 
 public struct SwiftPackageFile {
-    var name: String
-    var path: Path
-    var platforms: [Platform: String]
-    var products: [Product] = []
-    var targets: [Target] = []
+    public var name: String
+    public var path: Path
+    public var platforms: [Platform: String]
+    public var products: [Product] = []
+    public var targets: [Target] = []
 
-    var artifacts: [CachedArtifact]
-    var removeMissing: Bool
+    public var artifacts: [CachedArtifact]
+    public var removeMissing: Bool
+
+    public var needsWrite: Bool {
+        let existing: String? = try? path.read()
+
+        return existing != asString()
+    }
 
     public init(name: String, path: Path, platforms: [Platform: String], artifacts: [CachedArtifact], removeMissing: Bool) throws {
         self.name = name

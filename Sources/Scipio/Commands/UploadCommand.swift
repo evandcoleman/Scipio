@@ -24,7 +24,7 @@ extension Command {
                 Config.readConfig()
             }
 
-            
+            log.fatal("Not yet implemented")
         }
     }
 }

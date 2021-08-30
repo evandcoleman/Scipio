@@ -46,7 +46,7 @@ public struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
             ]
 
             let task = urlSession
-                .uploadTask(with: request, fromFile: artifact.path.url, progressHandler: { log.progress("Uploading \(artifact.name)", percent: $0) }) { data, response, error in
+                .uploadTask(with: request, fromFile: artifact.path.url, progressHandler: { log.progress(percent: $0) }) { data, response, error in
                     if let error = error {
                         promise(.failure(error))
                     } else if let statusCode = (response as? HTTPURLResponse)?.statusCode, statusCode >= 400 {
@@ -60,6 +60,8 @@ public struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
                     }
                 }
 
+            log.info("Uploading \(artifact.name)")
+
             task.resume()
         }
         .eraseToAnyPublisher()
@@ -70,7 +72,7 @@ public struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
             let url = downloadUrl(for: product, version: version)
 
             let task = urlSession
-                .downloadTask(with: url, progressHandler: { log.progress("Downloading \(product)", percent: $0) }) { url, response, error in
+                .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
                     if let error = error {
                         promise(.failure(error))
                     } else if let statusCode = (response as? HTTPURLResponse)?.statusCode, statusCode >= 400 {
@@ -81,6 +83,8 @@ public struct HTTPCacheEngine: CacheEngine, Decodable, Equatable {
                         promise(.failure(HTTPCacheEngineError.downloadFailed))
                     }
                 }
+
+            log.info("Downloading \(product):")
 
             task.resume()
         }

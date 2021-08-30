@@ -52,6 +52,8 @@ extension Command {
         )
 
         try Runner.updatePackageManifest(at: Config.current.directory, with: cachedArtifacts, removeMissing: options.packages?.isEmpty != false)
+
+        log.success("✅  Done!")
     }
   }
 }

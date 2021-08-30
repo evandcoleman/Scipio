@@ -80,16 +80,16 @@ public final class Log: NSObject {
         self.log(level: .passthrough, file: file, line: line, column: column, message)
     }
 
-    public func progress(file: String = #file, line: Int = #line, column: Int = #column, _ message: String, percent: Double) {
+    public func progress(file: String = #file, line: Int = #line, column: Int = #column, percent: Double) {
         let width: Int = 40
-        let fullMessage = "\r\(message): [" + stride(from: 0, to: width, by: 1)
+        let message = "[" + stride(from: 0, to: width, by: 1)
             .map { Double($0) / Double(width) > min(percent, 1) ? "-" : "=" }
             .joined() + "] \(Int((percent * 100).rounded()))%"
 
         if percent >= 1 {
-            self.log(level: .success, terminator: "\r\n", file: file, line: line, column: column, [fullMessage])
+            self.log(level: .success, file: file, line: line, column: column, [message])
         } else {
-            self.log(level: .info, terminator: "\r", file: file, line: line, column: column, [fullMessage])
+            self.log(level: .info, terminator: "\r", file: file, line: line, column: column, [message])
         }
     }
 
@@ -113,7 +113,7 @@ public final class Log: NSObject {
             guard level.levelValue >= self.level.levelValue else { return }
         }
 
-        let filename = URL(string: file)?.lastPathComponent ?? ""
+        let filename = URL(fileURLWithPath: file).lastPathComponent
         let formattedMessage = message.map { String(describing: $0) } .joined(separator: " ")
         let dateText = Log.dateFormatter.string(from: Date())
         let debugMessage = "[\(dateText)]: [\(filename):\(line):\(column)] | \(formattedMessage)"

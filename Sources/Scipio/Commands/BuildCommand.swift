@@ -30,6 +30,8 @@ extension Command {
                 force: options.force || buildOptions.forceBuild,
                 skipClean: options.skipClean
             )
+
+            log.success("✅  Done!")
         }
     }
 }

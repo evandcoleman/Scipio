@@ -123,10 +123,14 @@ project '\(projectPath.string)'
         do {
             try sh("which pod").waitUntilExit()
         } catch {
+            log.info("🍫  Installing CocoaPods...")
+
             try sh("gem install cocoapods")
                 .logOutput()
                 .waitUntilExit()
         }
+
+        log.info("🍫  Installing Pods...")
 
         try path.chdir {
             try sh("LANG=en_US.UTF-8 pod install")

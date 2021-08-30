@@ -67,7 +67,7 @@ public final class PackageProcessor: DependencyProcessor {
                        let checksum = target.checksum {
                         downloads <<< Future<Path, Error>.deferred { promise in
                             let task = self.urlSession
-                                .downloadTask(with: url, progressHandler: { log.progress("Downloading \(url.lastPathComponent)", percent: $0) }) { url, response, error in
+                                .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
                                     if let error = error {
                                         promise(.failure(error))
                                     } else if let url = url {
@@ -76,6 +76,8 @@ public final class PackageProcessor: DependencyProcessor {
                                         log.fatal("Unexpected download result")
                                     }
                                 }
+
+                            log.info("Downloading \(url.lastPathComponent):")
 
                             task.resume()
                         }
@@ -96,7 +98,9 @@ public final class PackageProcessor: DependencyProcessor {
                                 try targetPath.delete()
                             }
 
-                            try Zip.unzipFile(zipPath.url, destination: targetPath.parent().url, overwrite: true, password: nil, progress: { log.progress("Decompressing \(zipPath.lastComponent)", percent: $0) })
+                            log.info("Decompressing \(zipPath.lastComponent):")
+
+                            try Zip.unzipFile(zipPath.url, destination: targetPath.parent().url, overwrite: true, password: nil, progress: { log.progress(percent: $0) })
 
                             return AnyArtifact(artifact)
                         }
@@ -171,7 +175,7 @@ public final class PackageProcessor: DependencyProcessor {
     }
 
     private func resolvePackageDependencies(in project: Path, sourcePackagesPath: Path) throws {
-        log.info("📦 Resolving dependencies...")
+        log.info("📦  Resolving package dependencies...")
 
         let command = Xcodebuild(
             command: .resolvePackageDependencies,
@@ -183,7 +187,7 @@ public final class PackageProcessor: DependencyProcessor {
     }
 
     private func readPackages(sourcePackagesPath: Path) throws -> [SwiftPackageDescriptor] {
-        log.info("🧮 Loading Swift packages...")
+        log.info("🧮  Loading Swift packages...")
 
         let decoder = JSONDecoder()
         let workspacePath = sourcePackagesPath + "workspace-state.json"

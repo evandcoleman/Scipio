@@ -173,11 +173,12 @@ extension CacheEngineDelegator {
             }
 
             do {
+                log.info("Compressing \(artifact.name):")
                 try Zip.zipFiles(
                     paths: [artifact.path.url],
                     zipFilePath: compressed.path.url,
                     password: nil,
-                    progress: { log.progress("Compressing \(artifact.name)", percent: $0) }
+                    progress: { log.progress(percent: $0) }
                 )
             } catch ZipError.zipFail {
                 throw ScipioError.zipFailure(artifact)
