@@ -120,6 +120,14 @@ project '\(projectPath.string)'
     }
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
+        do {
+            try sh("which pod").waitUntilExit()
+        } catch {
+            try sh("gem install cocoapods")
+                .logOutput()
+                .waitUntilExit()
+        }
+
         try path.chdir {
             try sh("LANG=en_US.UTF-8 pod install")
                 .logOutput()
