@@ -82,14 +82,14 @@ public final class Log: NSObject {
 
     public func progress(file: String = #file, line: Int = #line, column: Int = #column, _ message: String, percent: Double) {
         let width: Int = 40
-        let fullMessage = "\(message): [" + stride(from: 0, to: width, by: 1)
+        let fullMessage = "\r\(message): [" + stride(from: 0, to: width, by: 1)
             .map { Double($0) / Double(width) > min(percent, 1) ? "-" : "=" }
-            .joined() + "] \(Int((percent * 100).rounded()))% \r"
+            .joined() + "] \(Int((percent * 100).rounded()))%"
 
         if percent >= 1 {
             self.log(level: .success, file: file, line: line, column: column, [fullMessage])
         } else {
-            self.log(level: .info, file: file, line: line, column: column, [fullMessage])
+            self.log(level: .info, terminator: "\r", file: file, line: line, column: column, [fullMessage])
         }
     }
 
@@ -106,7 +106,7 @@ public final class Log: NSObject {
         #endif
     }
 
-    private func log(level: Level, file: String = #file, line: Int = #line, column: Int = #column, _ message: [Any]) {
+    private func log(level: Level, terminator: String = "\n", file: String = #file, line: Int = #line, column: Int = #column, _ message: [Any]) {
         if isDebug {
             guard level.levelValue >= debugLevel.levelValue else { return }
         } else {
@@ -122,19 +122,19 @@ public final class Log: NSObject {
         switch level {
         case .debug where isDebug:
             if useColors {
-                print("\(debugMessage, color: level.color)")
+                print("\(debugMessage, color: level.color)", terminator: terminator)
             } else {
-                print(debugMessage)
+                print(debugMessage, terminator: terminator)
             }
         case .passthrough:
-            print(isDebug ? debugMessage : defaultMessage)
+            print(isDebug ? debugMessage : defaultMessage, terminator: terminator)
         case .debug:
             break
         default:
             if useColors {
-                print("\(isDebug ? debugMessage : defaultMessage, color: level.color)")
+                print("\(isDebug ? debugMessage : defaultMessage, color: level.color)", terminator: terminator)
             } else {
-                print(isDebug ? debugMessage : defaultMessage)
+                print(isDebug ? debugMessage : defaultMessage, terminator: terminator)
             }
         }
 
