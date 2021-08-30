@@ -239,7 +239,7 @@ public final class BinaryProcessor: DependencyProcessor {
             throw ScipioError.invalidFramework(input.lastComponent)
         }
 
-        let rawArchitectures = try sh("xcrun lipo -i \(binaryPath.quoted)")
+        let rawArchitectures = try sh("/usr/bin/lipo", "-i", "\(binaryPath.quoted)")
             .waitForOutputString()
             .components(separatedBy: ":")
             .last?
@@ -288,7 +288,7 @@ public final class BinaryProcessor: DependencyProcessor {
                 .map { "-remove \($0)" }
             let sdkBinaryPath = frameworksFolder + "\(input.lastComponent)/\(frameworkName)"
 
-            try sh("xcrun lipo \(removeArgs.joined(separator: " ")) \(binaryPath.quoted) -o \(sdkBinaryPath.quoted)")
+            try sh("/usr/bin/lipo", "\(removeArgs.joined(separator: " "))", "\(binaryPath.quoted)", "-o", "\(sdkBinaryPath.quoted)")
                 .waitUntilExit()
 
             return archivePath

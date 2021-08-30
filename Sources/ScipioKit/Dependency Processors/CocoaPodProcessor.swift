@@ -3,6 +3,7 @@ import Foundation
 import PathKit
 import ProjectSpec
 import Regex
+import RubyGateway
 import XcodeGenKit
 import XcodeProj
 
@@ -121,30 +122,40 @@ project '\(projectPath.string)'
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
         do {
-            try sh("which pod").waitUntilExit()
-        } catch {
-            log.info("🍫  Installing CocoaPods...")
+            try Ruby.require(filename: "cocoapods")
+        } catch RbError.rubyException(let e) {
+            if try e.exception.call("class").description == "LoadError" {
+                log.info("🍫  Installing CocoaPods...")
 
-            try sh("gem install cocoapods")
-                .logOutput()
-                .waitUntilExit()
+                try sh("/System/Library/Frameworks/Ruby.framework/Versions/Current/usr/bin/gem", "install", "cocoapods", asAdministrator: true)
+                    .logOutput()
+                    .waitUntilExit()
+
+                try Ruby.get("Gem").call("clear_paths")
+                try Ruby.require(filename: "cocoapods")
+            } else {
+                throw RbError.rubyException(e)
+            }
         }
 
         log.info("🍫  Installing Pods...")
 
-        try path.chdir {
-            try sh("LANG=en_US.UTF-8 pod install")
-                .logOutput()
-                .waitUntilExit()
-        }
+        let sandboxPath = path + "Pods"
+        let podfilePath = path + "Podfile"
+        let lockfilePath = path + "Podfile.lock"
+        let sandbox = RbObject(ofClass: "Pod::Sandbox", args: [sandboxPath.string])!
+        let podfile = try Ruby.getClass("Pod::Podfile").call("from_file", args: [podfilePath.rbPath])
+        let lockfile = try Ruby.getClass("Pod::Lockfile").call("from_file", args: [lockfilePath.rbPath])
+        let installer = RbObject(ofClass: "Pod::Installer", args: [sandbox, podfile, lockfile])!
+        try installer.call("install!")
 
-        let podsProjectPath = path + "Pods/Pods.xcodeproj"
+        let podsProjectPath = sandboxPath + "Pods.xcodeproj"
         let project = try XcodeProj(path: podsProjectPath)
 
         return try dependencies.map { dependency in
             let productNames = project.productNames(for: dependency.name)
             let versionRegex = try Regex(string: "- \(dependency.name)\\s\\((.*)\\)")
-            let lockFile: String = try (path + "Podfile.lock").read()
+            let lockFile: String = try lockfilePath.read()
             let match = versionRegex.firstMatch(in: lockFile)
 
             guard let version = match?.captures.last??.components(separatedBy: " ").last else {

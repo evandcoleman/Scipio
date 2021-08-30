@@ -51,9 +51,9 @@ public struct Xcodebuild {
         let parser = Parser()
         let output = OutputHandler(quiet: false, quieter: false, isCI: false, { log.passthrough($0) })
 
-        let command = buildCommand()
-        log.verbose(command)
-        try sh(command)
+        let arguments = getArguments()
+        log.verbose((["xcodebuild"] + arguments).joined(separator: " "))
+        try sh("/usr/bin/xcodebuild", arguments)
             .onReadLine { line in
                 if log.level.levelValue <= Log.Level.verbose.levelValue {
                     log.verbose(line)
@@ -69,8 +69,8 @@ public struct Xcodebuild {
         }
     }
 
-    private func buildCommand() -> String {
-        var args = ["xcodebuild"]
+    private func getArguments() -> [String] {
+        var args: [String] = []
 
         switch command {
         case .archive:
@@ -115,7 +115,7 @@ public struct Xcodebuild {
         args.append(contentsOf: additionalArguments)
         args.append(contentsOf: additionalBuildSettings.map { "\($0)=\($1)" })
 
-        return args.joined(separator: " ")
+        return args
     }
 }
 
