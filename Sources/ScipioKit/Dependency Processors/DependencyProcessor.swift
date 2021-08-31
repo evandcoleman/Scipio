@@ -33,6 +33,7 @@ extension DependencyProcessor {
                         let productNames = Dictionary(
                             uniqueKeysWithValues: (dependency.productNames ?? [])
                                 .map { ($0, [dependency.name]) }
+                                .filter { !$0.0.isEmpty }
                         )
 
                         accumulated.merge(productNames) { $0 + $1 }

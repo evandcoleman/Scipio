@@ -143,19 +143,24 @@ project '\(projectPath.string)'
         let sandboxPath = path + "Pods"
         let podfilePath = path + "Podfile"
         let lockfilePath = path + "Podfile.lock"
+        let manifestPath = path + "Pods/Manifest.lock"
         let sandbox = RbObject(ofClass: "Pod::Sandbox", args: [sandboxPath.string])!
         let podfile = try Ruby.getClass("Pod::Podfile").call("from_file", args: [podfilePath.rbPath])
         let lockfile = try Ruby.getClass("Pod::Lockfile").call("from_file", args: [lockfilePath.rbPath])
         let installer = RbObject(ofClass: "Pod::Installer", args: [sandbox, podfile, lockfile])!
+        try installer.setAttribute("update", newValue: false)
+        try installer.setAttribute("deployment", newValue: false)
+        try installer.setAttribute("clean_install", newValue: false)
+        try installer.setAttribute("repo_update", newValue: false)
         try installer.call("install!")
 
         let podsProjectPath = sandboxPath + "Pods.xcodeproj"
         let project = try XcodeProj(path: podsProjectPath)
+        let lockFile: String = try manifestPath.read()
 
         return try dependencies.map { dependency in
             let productNames = project.productNames(for: dependency.name)
             let versionRegex = try Regex(string: "- \(dependency.name)\\s\\((.*)\\)")
-            let lockFile: String = try lockfilePath.read()
             let match = versionRegex.firstMatch(in: lockFile)
 
             guard let version = match?.captures.last??.components(separatedBy: " ").last else {

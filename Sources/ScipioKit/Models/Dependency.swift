@@ -13,8 +13,11 @@ public struct BinaryDependency: Dependency, DependencyProducts {
     public let excludes: [String]?
 
     public var productNames: [String]? {
-        return try? productNamesCachePath.read()
+        let names = try? productNamesCachePath.read()
             .components(separatedBy: ",")
+            .filter { !$0.isEmpty }
+
+        return names?.isEmpty == true ? nil : names
     }
 
     public var productNamesCachePath: Path {
