@@ -197,7 +197,7 @@ public final class BinaryProcessor: DependencyProcessor {
     }
 
     private func decompress(dependency: BinaryDependency, at path: Path) throws -> Path {
-        let targetPath = Config.current.cachePath + Path(dependency.url.path).lastComponent.components(separatedBy: ".")[0]
+        let targetPath = Config.current.cachePath + Path(dependency.url.path).lastComponentWithoutExtension
 
         if options.skipClean, targetPath.exists {
             return targetPath
@@ -216,8 +216,8 @@ public final class BinaryProcessor: DependencyProcessor {
             if gunzippedPath.extension == "tar" {
                 let untaredPath = try gunzippedPath.untar()
 
-                if !targetPath.exists {
-                    try untaredPath.move(targetPath)
+                if !targetPath.withoutLastExtension().exists {
+                    try untaredPath.move(targetPath.withoutLastExtension())
                 }
             } else {
                 try gunzippedPath.move(targetPath)
