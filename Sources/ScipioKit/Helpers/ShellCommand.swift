@@ -46,8 +46,13 @@ struct ShellCommand {
                 log.fatal("Command failed")
             }
         } else {
-            task.arguments = arguments
-            task.launchPath = command
+            if command.contains("/") {
+                task.arguments = arguments
+                task.launchPath = command
+            } else {
+                task.arguments = ["-c", command] + arguments
+                task.launchPath = "/bin/bash"
+            }
 
             task.launch()
         }
@@ -92,11 +97,5 @@ struct ShellCommand {
         if task.terminationStatus > 0 {
             throw ScipioError.commandFailed(command: ([command] + arguments).joined(separator: " "), status: Int(task.terminationStatus), output: String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
         }
-    }
-}
-
-public extension Path {
-    var quoted: String {
-        return #""\#(string)""#
     }
 }

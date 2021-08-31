@@ -3,7 +3,6 @@ import Foundation
 import PathKit
 import ProjectSpec
 import Regex
-import RubyGateway
 import XcodeGenKit
 import XcodeProj
 
@@ -122,37 +121,26 @@ project '\(projectPath.string)'
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
         do {
-            try Ruby.require(filename: "cocoapods")
-        } catch RbError.rubyException(let e) {
-            if try e.exception.call("class").description == "LoadError" {
-                log.info("🍫  Installing CocoaPods...")
+            try sh("which", "pod")
+                .waitUntilExit()
+        } catch {
+            log.info("🍫  Installing CocoaPods...")
 
-                try sh("/System/Library/Frameworks/Ruby.framework/Versions/Current/usr/bin/gem", "install", "cocoapods", asAdministrator: true)
-                    .logOutput()
-                    .waitUntilExit()
-
-                try Ruby.get("Gem").call("clear_paths")
-                try Ruby.require(filename: "cocoapods")
-            } else {
-                throw RbError.rubyException(e)
-            }
+            try sh("gem", "install", "cocoapods", asAdministrator: true)
+                .logOutput()
+                .waitUntilExit()
         }
 
         log.info("🍫  Installing Pods...")
 
         let sandboxPath = path + "Pods"
-        let podfilePath = path + "Podfile"
-        let lockfilePath = path + "Podfile.lock"
         let manifestPath = path + "Pods/Manifest.lock"
-        let sandbox = RbObject(ofClass: "Pod::Sandbox", args: [sandboxPath.string])!
-        let podfile = try Ruby.getClass("Pod::Podfile").call("from_file", args: [podfilePath.rbPath])
-        let lockfile = try Ruby.getClass("Pod::Lockfile").call("from_file", args: [lockfilePath.rbPath])
-        let installer = RbObject(ofClass: "Pod::Installer", args: [sandbox, podfile, lockfile])!
-        try installer.setAttribute("update", newValue: false)
-        try installer.setAttribute("deployment", newValue: false)
-        try installer.setAttribute("clean_install", newValue: false)
-        try installer.setAttribute("repo_update", newValue: false)
-        try installer.call("install!")
+
+        try path.chdir {
+            try sh("pod", "install")
+                .logOutput()
+                .waitUntilExit()
+        }
 
         let podsProjectPath = sandboxPath + "Pods.xcodeproj"
         let project = try XcodeProj(path: podsProjectPath)
