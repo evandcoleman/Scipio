@@ -121,23 +121,24 @@ project '\(projectPath.string)'
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
         let ruby = try Ruby()
-        var podCommandPath = try? which("pod")
 
-        if podCommandPath == nil {
+        do {
+            try sh("pod", "--version")
+                .waitUntilExit()
+        } catch {
             log.info("🍫  Installing CocoaPods...")
 
-            try ruby.installGem("cocoapods")
-
-            podCommandPath = try which("pod")
+            try ruby.bundle(install: "cocoapods", at: path)
         }
 
         log.info("🍫  Installing Pods...")
 
         let sandboxPath = path + "Pods"
         let manifestPath = path + "Pods/Manifest.lock"
+        let podCommandPath = try which("pod")
 
         try path.chdir {
-            try sh(podCommandPath!, "install")
+            try sh(podCommandPath, "install")
                 .logOutput()
                 .waitUntilExit()
         }
