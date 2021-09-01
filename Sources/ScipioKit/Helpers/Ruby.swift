@@ -57,7 +57,7 @@ source "https://rubygems.org"
 
         let bundlePath = try which("bundle")
 
-        try sh(bundlePath, "install", "--gemfile", gemfilePath.string, "--path", path)
+        try sh(bundlePath, "install", "--gemfile", gemfilePath.string, "--path", path.string)
             .logOutput()
             .waitUntilExit()
     }
@@ -66,7 +66,7 @@ source "https://rubygems.org"
         let gemfilePath = path + "Gemfile"
         let bundlePath = try which("bundle")
 
-        try sh(bundlePath, ["exec", "--gemfile", gemfilePath.string, "--path", path, command] + arguments)
+        try sh(bundlePath, ["exec", "--gemfile", gemfilePath.string, "--path", path.string, command] + arguments)
             .logOutput()
             .waitUntilExit()
     }
