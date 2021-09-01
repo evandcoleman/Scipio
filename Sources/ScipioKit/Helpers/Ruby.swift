@@ -38,11 +38,6 @@ struct Ruby {
 
     func bundle(install gems: [String], at path: Path) throws {
         let gemfilePath = path + "Gemfile"
-        let gemfileLockPath = path + "Gemfile.lock"
-
-        if gemfileLockPath.exists {
-            try gemfileLockPath.delete()
-        }
 
         try gemfilePath.write("""
 source "https://rubygems.org"
@@ -62,7 +57,7 @@ source "https://rubygems.org"
 
         let bundlePath = try which("bundle")
 
-        try sh(bundlePath, "install", "--gemfile", gemfilePath.string)
+        try sh(bundlePath, "install", "--gemfile", gemfilePath.string, "--path", path)
             .logOutput()
             .waitUntilExit()
     }
@@ -71,7 +66,7 @@ source "https://rubygems.org"
         let gemfilePath = path + "Gemfile"
         let bundlePath = try which("bundle")
 
-        try sh(bundlePath, ["exec", "--gemfile", gemfilePath.string, command] + arguments)
+        try sh(bundlePath, ["exec", "--gemfile", gemfilePath.string, "--path", path, command] + arguments)
             .logOutput()
             .waitUntilExit()
     }
