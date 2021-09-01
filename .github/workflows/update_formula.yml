@@ -13,7 +13,7 @@ jobs:
     - name: Update Formula
       id: update_formula
       run: |
-        BRANCH=${GITHUB_REF/refs\/heads\//}
+        BRANCH=${GITHUB_HEAD_REF/refs\/heads\//}
         VERSION=${BRANCH#"$BRANCH_PREFIX"}
         URL="https://github.com/evandcoleman/Scipio/archive/refs/tags/$VERSION.tar.gz"
         TAP_REPO="evandcoleman/homebrew-tap"
