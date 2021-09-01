@@ -45,6 +45,9 @@ source "https://rubygems.org"
 \(gems.map { #"gem "\#($0)""# }.joined(separator: "\n"))
 """)
 
+        let gemfileContents: String = try gemfilePath.read()
+        log.verbose("Installing gems from Gemfile at ", path.string, "\n", gemfileContents)
+
         do {
             try sh("bundle", "--version")
                 .waitUntilExit()

@@ -72,6 +72,8 @@ struct ShellCommand {
                 task.launchPath = "/usr/bin/sudo"
                 task.standardInput = inputPipe
 
+                log.verbose(task.launchPath ?? "", task.arguments?.joined(separator: " ") ?? "")
+
                 task.launch()
             }
             do {
@@ -99,6 +101,8 @@ struct ShellCommand {
                 task.arguments = ["-c", command] + arguments
                 task.launchPath = "/bin/bash"
             }
+
+            log.verbose(task.launchPath ?? "", task.arguments?.joined(separator: " ") ?? "")
 
             task.launch()
         }
