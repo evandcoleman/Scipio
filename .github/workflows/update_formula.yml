@@ -23,18 +23,14 @@ jobs:
         TAP_REPO="evandcoleman/homebrew-tap"
         REPO_PATH=$(pwd)
 
-        brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/$TAP_REPO.git
-        cd $(brew --repository $TAP_REPO)
-        
         git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
         git config --global user.name $GITHUB_ACTOR
 
-        if [ $(git tag -l "$VERSION") ]; then
-          git fetch origin formula/scipio/$VERSION
-          git checkout formula/scipio/$VERSION
-        else
-          git checkout -b formula/scipio/$VERSION
-        fi
+        brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/$TAP_REPO.git
+        cd $(brew --repository $TAP_REPO)
+
+        git fetch origin formula/scipio/$VERSION
+        git checkout -b formula/scipio/$VERSION
 
         sed -E -i '' 's~^  url ".*"~  url "'$URL\"~ Formula/scipio.rb
         brew fetch Formula/scipio.rb || true
@@ -45,12 +41,7 @@ jobs:
         git commit -m "scipio $VERSION"
         git push origin formula/scipio/$VERSION
 
-        if [ $(git tag -l "$VERSION") ]; then
-          echo "Tag already exists."
-        else
-          git tag $VERSION
-          git push origin --tags
-        fi
+        echo ::set-output name=version::$VERSION
       env:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
@@ -61,18 +52,16 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
+        tag_name: ${{ steps.update_formula.output.version }}
+        release_name: Release ${{ steps.update_formula.output.version }}
         draft: false
         prerelease: false
     - name: Open Pull Request
       id: open_pull_request
       run: |
-        BRANCH=${GITHUB_REF/refs\/heads\//}
-        VERSION=${BRANCH#"$BRANCH_PREFIX"}
         cd /usr/local/Homebrew/Library/Taps/evandcoleman/homebrew-tap
         curl -u $GITHUB_USER:$GITHUB_TOKEN -d '{"title": "Update Scipio to '"$VERSION"'", "base": "main", "head": "formula/scipio/'"$VERSION"'"}' https://api.github.com/repos/evandcoleman/homebrew-tap/pulls
       env:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
-        BRANCH_PREFIX: release/
+        VERSION: ${{ steps.update_formula.output.version }}
