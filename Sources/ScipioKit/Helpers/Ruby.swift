@@ -57,21 +57,17 @@ source "https://rubygems.org"
 
         let bundlePath = try which("bundle")
 
-        try path.chdir {
-            try sh(bundlePath, "install")
-                .logOutput()
-                .waitUntilExit()
-        }
+        try sh(bundlePath, "install", in: path)
+            .logOutput()
+            .waitUntilExit()
     }
 
     func bundle(exec command: String, _ arguments: String..., at path: Path) throws {
         let bundlePath = try which("bundle")
 
-        try path.chdir {
-            try sh(bundlePath, ["exec", command] + arguments)
-                .logOutput()
-                .waitUntilExit()
-        }
+        try sh(bundlePath, ["exec", command] + arguments, in: path)
+            .logOutput()
+            .waitUntilExit()
     }
 
     func commandExists(_ command: String) -> Bool {
