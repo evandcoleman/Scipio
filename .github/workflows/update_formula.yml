@@ -46,16 +46,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
         BRANCH_PREFIX: release/
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.update_formula.output.version }}
-        release_name: Release ${{ steps.update_formula.output.version }}
-        draft: false
-        prerelease: false
     - name: Open Pull Request
       id: open_pull_request
       run: |
