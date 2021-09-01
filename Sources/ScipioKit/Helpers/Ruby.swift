@@ -38,6 +38,11 @@ struct Ruby {
 
     func bundle(install gems: [String], at path: Path) throws {
         let gemfilePath = path + "Gemfile"
+        let gemfileLockPath = path + "Gemfile.lock"
+
+        if gemfileLockPath.exists {
+            try gemfileLockPath.delete()
+        }
 
         try gemfilePath.write("""
 source "https://rubygems.org"
