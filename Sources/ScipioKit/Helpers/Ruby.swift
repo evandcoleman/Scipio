@@ -32,6 +32,35 @@ struct Ruby {
             .waitUntilExit()
     }
 
+    func bundle(install gems: String..., at path: Path) throws {
+        try bundle(install: gems, at: path)
+    }
+
+    func bundle(install gems: [String], at path: Path) throws {
+        let gemfilePath = path + "Gemfile"
+
+        try gemfilePath.write("""
+source "https://rubygems.org"
+
+\(gems.map { #"gem "\#($0)""# }.joined(separator: "\n"))
+""")
+
+        do {
+            try sh("bundle", "--version")
+                .waitUntilExit()
+        } catch {
+            try installGem("bundler")
+        }
+
+        let bundlePath = try which("bundle")
+
+        try path.chdir {
+            try sh(bundlePath, "install")
+                .logOutput()
+                .waitUntilExit()
+        }
+    }
+
     func commandExists(_ command: String) -> Bool {
         return (try? which(command)) != nil
     }

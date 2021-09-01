@@ -13,6 +13,7 @@ func sh(_ command: String, _ arguments: [String], asAdministrator: Bool = false,
     ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
 
+@discardableResult
 func which(_ command: String) throws -> Path {
     do {
         let output = try sh("/usr/bin/which", command, passEnvironment: true)
