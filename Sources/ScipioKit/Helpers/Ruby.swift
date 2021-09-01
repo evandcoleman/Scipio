@@ -57,7 +57,7 @@ source "https://rubygems.org"
 
         let bundlePath = try which("bundle")
 
-        try sh("cd", path.string, bundlePath.string, "install")
+        try sh("cd", path.string, "&&", bundlePath.string, "install")
             .logOutput()
             .waitUntilExit()
     }
@@ -65,7 +65,7 @@ source "https://rubygems.org"
     func bundle(exec command: String, _ arguments: String..., at path: Path) throws {
         let bundlePath = try which("bundle")
 
-        try sh("cd", [path.string, bundlePath.string, "exec", command] + arguments)
+        try sh("cd", [path.string, "&&", bundlePath.string, "exec", command] + arguments)
             .logOutput()
             .waitUntilExit()
     }
