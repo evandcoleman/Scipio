@@ -1,0 +1,15 @@
+name: test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-11]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Run tests
+        run: swift test
