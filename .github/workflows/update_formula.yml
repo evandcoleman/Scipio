@@ -2,8 +2,8 @@ name: Update Formula
 
 on:
   push:
-   tags:
-     - '*'
+   branches:
+     - 'release/*'
 
 jobs:
   release:
@@ -17,7 +17,8 @@ jobs:
     - name: Update Formula
       id: update_formula
       run: |
-        VERSION=${GITHUB_REF/refs\/tags\//}
+        BRANCH=${GITHUB_REF/refs\/heads\//}
+        VERSION=${BRANCH#"$BRANCH_PREFIX"}
         URL="https://github.com/evandcoleman/Scipio/archive/refs/tags/$VERSION.tar.gz"
         TAP_REPO="evandcoleman/homebrew-tap"
         REPO_PATH=$(pwd)
@@ -44,6 +45,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
+        BRANCH_PREFIX: release/
     - name: Open Pull Request
       id: open_pull_request
       run: |
@@ -52,4 +54,4 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
-        VERSION: ${{ steps.update_formula.outputs.version }}
+        VERSION: ${{ steps.update_formula.output.version }}
