@@ -64,3 +64,11 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
         VERSION: ${{ steps.update_formula.output.version }}
+    - name: Merge Pull Request
+      id: merge_pull_request
+      run: |
+        $PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+        curl -u $GITHUB_USER:$GITHUB_TOKEN -X PUT https://api.github.com/repos/evandcoleman/Scipio/pulls/$PR_NUMBER/merge
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_USER: ${{ github.actor }}
