@@ -1,23 +1,19 @@
 name: Update Formula
 
 on:
-  push:
-   branches:
-     - 'release/*'
+  pull_request:
+    types: [ labeled ]
 
 jobs:
   release:
-    strategy:
-      matrix:
-        os: [macos-11]
-
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-11
+    if: ${{ github.event.label.name == 'pr-formula' }}
     steps:
     - uses: actions/checkout@v2
     - name: Update Formula
       id: update_formula
       run: |
-        BRANCH=${GITHUB_REF/refs\/heads\//}
+        BRANCH=${GITHUB_HEAD_REF/refs\/heads\//}
         VERSION=${BRANCH#"$BRANCH_PREFIX"}
         URL="https://github.com/evandcoleman/Scipio/archive/refs/tags/$VERSION.tar.gz"
         TAP_REPO="evandcoleman/homebrew-tap"
@@ -26,10 +22,12 @@ jobs:
         git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
         git config --global user.name $GITHUB_ACTOR
 
+        git tag $VERSION
+        git push origin $VERSION
+
         brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/$TAP_REPO.git
         cd $(brew --repository $TAP_REPO)
 
-        git fetch origin formula/scipio/$VERSION
         git checkout -b formula/scipio/$VERSION
 
         sed -E -i '' 's~^  url ".*"~  url "'$URL\"~ Formula/scipio.rb
@@ -46,6 +44,16 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
         BRANCH_PREFIX: release/
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.update_formula.outputs.version }}
+        release_name: Release ${{ steps.update_formula.outputs.version }}
+        draft: false
+        prerelease: false
     - name: Open Pull Request
       id: open_pull_request
       run: |
@@ -54,4 +62,12 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
-        VERSION: ${{ steps.update_formula.output.version }}
+        VERSION: ${{ steps.update_formula.outputs.version }}
+    - name: Merge Pull Request
+      id: merge_pull_request
+      run: |
+        curl -u $GITHUB_USER:$GITHUB_TOKEN -X PUT https://api.github.com/repos/evandcoleman/Scipio/pulls/$PR_NUMBER/merge
+      env:
+        PR_NUMBER: ${{ github.event.number }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_USER: ${{ github.actor }}
