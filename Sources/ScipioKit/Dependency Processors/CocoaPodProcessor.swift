@@ -123,8 +123,7 @@ project '\(projectPath.string)'
         let ruby = try Ruby()
 
         do {
-            try sh("pod", "--version")
-                .waitUntilExit()
+            try ruby.bundle(exec: "pod", "--version", at: path)
         } catch {
             log.info("🍫  Installing CocoaPods...")
 
@@ -135,13 +134,8 @@ project '\(projectPath.string)'
 
         let sandboxPath = path + "Pods"
         let manifestPath = path + "Pods/Manifest.lock"
-        let podCommandPath = try which("pod")
 
-        try path.chdir {
-            try sh(podCommandPath, "install")
-                .logOutput()
-                .waitUntilExit()
-        }
+        try ruby.bundle(exec: "pod", "install", "--project-directory=\(path.string)", at: path)
 
         let podsProjectPath = sandboxPath + "Pods.xcodeproj"
         let project = try XcodeProj(path: podsProjectPath)

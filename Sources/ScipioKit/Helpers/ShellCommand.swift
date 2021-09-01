@@ -5,6 +5,10 @@ func sh(_ command: Path, _ arguments: String..., asAdministrator: Bool = false, 
     ShellCommand.sh(command: command.string, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
 
+func sh(_ command: Path, _ arguments: [String], asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command.string, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+}
+
 func sh(_ command: String, _ arguments: String..., asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
     ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
