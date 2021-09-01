@@ -1,17 +1,14 @@
 name: Update Formula
 
 on:
-  push:
-   branches:
-     - 'release/*'
+  pull_request_target:
+    types:
+      - labeled
 
 jobs:
   release:
-    strategy:
-      matrix:
-        os: [macos-11]
-
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-11
+    if: contains(github.event.pull_request.labels.*.name, 'pr-formula')
     steps:
     - uses: actions/checkout@v2
     - name: Update Formula
@@ -25,6 +22,9 @@ jobs:
 
         git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
         git config --global user.name $GITHUB_ACTOR
+
+        git tag $VERSION
+        git push origin $VERSION
 
         brew tap evandcoleman/tap https://$GITHUB_USER:$GITHUB_TOKEN@github.com/$TAP_REPO.git
         cd $(brew --repository $TAP_REPO)
@@ -46,6 +46,16 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
         BRANCH_PREFIX: release/
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.output.version }}
+        release_name: Release ${{ steps.get_version.output.version }}
+        draft: false
+        prerelease: false
     - name: Open Pull Request
       id: open_pull_request
       run: |
