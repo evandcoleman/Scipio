@@ -135,9 +135,11 @@ project '\(projectPath.string)'
 
         let sandboxPath = path + "Pods"
         let manifestPath = path + "Pods/Manifest.lock"
+        let podBinaryPath = try sh("which", "pod")
+            .waitForOutputString()
 
         try path.chdir {
-            try sh("pod", "install")
+            try sh(podBinaryPath, "install")
                 .logOutput()
                 .waitUntilExit()
         }
