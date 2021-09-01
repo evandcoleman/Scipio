@@ -29,15 +29,6 @@
         }
       },
       {
-        "package": "CRuby",
-        "repositoryURL": "https://github.com/johnfairh/CRuby",
-        "state": {
-          "branch": null,
-          "revision": "eb26e48106c60390a17f83c984ce3b26ccf9caf9",
-          "version": "2.0.0"
-        }
-      },
-      {
         "package": "GraphViz",
         "repositoryURL": "https://github.com/SwiftDocOrg/GraphViz.git",
         "state": {
@@ -80,15 +71,6 @@
           "branch": null,
           "revision": "76c2b73d4281d77fc3118391877efd1bf972f515",
           "version": "2.1.1"
-        }
-      },
-      {
-        "package": "RubyGateway",
-        "repositoryURL": "https://github.com/johnfairh/RubyGateway",
-        "state": {
-          "branch": null,
-          "revision": "5660cd2615f14aebcea00c97652464bf0c91a875",
-          "version": "5.1.0"
         }
       },
       {

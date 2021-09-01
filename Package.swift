@@ -14,7 +14,6 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/kylef/PathKit", from: "1.0.0"),
         .package(url: "https://github.com/sharplet/Regex", from: "2.1.1"),
-        .package(url: "https://github.com/johnfairh/RubyGateway", from: "5.1.0"),
         .package(url: "https://github.com/tsolomko/SWCompression.git", from: "4.6.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "0.4.4"),
         .package(url: "https://github.com/thii/xcbeautify", from: "0.9.1"),
@@ -36,7 +35,6 @@ let package = Package(
             dependencies: [
                 "PathKit",
                 "Regex",
-                "RubyGateway",
                 "SWCompression",
                 .product(name: "XcbeautifyLib", package: "xcbeautify"),
                 .product(name: "XcodeGenKit", package: "XcodeGen"),

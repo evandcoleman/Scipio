@@ -67,7 +67,7 @@ struct Xcode {
             let command = Xcodebuild(
                 command: .createXCFramework,
                 additionalArguments: frameworks
-                    .map { "-framework \($0)" } + ["-output \(output)"]
+                    .flatMap { ["-framework", $0.string] } + ["-output", output.string]
             )
             try buildDirectory.chdir {
                 try command.run()

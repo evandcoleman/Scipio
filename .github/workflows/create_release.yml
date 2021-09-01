@@ -1,0 +1,31 @@
+name: Update Formula
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Get version
+      id: get_version
+      run: |
+        BRANCH=${GITHUB_REF/refs\/heads\//}
+        VERSION=${BRANCH#"$BRANCH_PREFIX"}
+
+        echo ::set-output name=version::$VERSION
+      env:
+        BRANCH_PREFIX: release/
+    - name: Create Release
+      id: create_release
+      if: github.event.pull_request.merged == true
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.output.version }}
+        release_name: Release ${{ steps.get_version.output.version }}
+        draft: false
+        prerelease: false

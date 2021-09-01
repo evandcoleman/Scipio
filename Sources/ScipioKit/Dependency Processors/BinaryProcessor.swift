@@ -197,7 +197,13 @@ public final class BinaryProcessor: DependencyProcessor {
     }
 
     private func decompress(dependency: BinaryDependency, at path: Path) throws -> Path {
-        let targetPath = Config.current.cachePath + Path(dependency.url.path).lastComponentWithoutExtension
+        log.info("Decompressing \(path.lastComponent)...")
+
+        guard let compression = FileCompression(dependency.url) else {
+            log.fatal("Unsupported package url extension \"\(dependency.url.pathExtension)\"")
+        }
+
+        let targetPath = Config.current.cachePath + compression.decompressedName(url: dependency.url)
 
         if options.skipClean, targetPath.exists {
             return targetPath
@@ -205,27 +211,16 @@ public final class BinaryProcessor: DependencyProcessor {
             try targetPath.delete()
         }
 
-        log.info("Decompressing \(path.lastComponent)...")
-
-        switch dependency.url.pathExtension {
-        case "zip":
+        switch compression {
+        case .zip:
             try Zip.unzipFile(path.url, destination: targetPath.url, overwrite: true, password: nil, progress: { log.progress(percent: $0) })
-        case "gz":
+        case .gzip:
             let gunzippedPath = try path.gunzipped()
-
-            if gunzippedPath.extension == "tar" {
-                let untaredPath = try gunzippedPath.untar()
-
-                if !targetPath.withoutLastExtension().exists {
-                    try untaredPath.move(targetPath.withoutLastExtension())
-                }
-            } else {
-                try gunzippedPath.move(targetPath)
-            }
-        case "":
-            break
-        default:
-            log.fatal("Unsupported package url extension \"\(dependency.url.pathExtension)\"")
+            try gunzippedPath.move(targetPath)
+        case .tarGzip:
+            let gunzippedPath = try path.gunzipped()
+            let untaredPath = try gunzippedPath.untar()
+            try untaredPath.move(targetPath)
         }
 
         return targetPath
@@ -239,7 +234,7 @@ public final class BinaryProcessor: DependencyProcessor {
             throw ScipioError.invalidFramework(input.lastComponent)
         }
 
-        let rawArchitectures = try sh("/usr/bin/lipo", "-i", "\(binaryPath.quoted)")
+        let rawArchitectures = try sh("/usr/bin/lipo", "-info", binaryPath.string)
             .waitForOutputString()
             .components(separatedBy: ":")
             .last?
@@ -285,15 +280,57 @@ public final class BinaryProcessor: DependencyProcessor {
             let removeArchs = Set(architectures).subtracting(sdk.architectures)
             let removeArgs = (removeArchs
                 .map(\.rawValue) + unknownArchitectures)
-                .map { "-remove \($0)" }
+                .flatMap { ["-remove", $0] }
             let sdkBinaryPath = frameworksFolder + "\(input.lastComponent)/\(frameworkName)"
 
-            try sh("/usr/bin/lipo", "\(removeArgs.joined(separator: " "))", "\(binaryPath.quoted)", "-o", "\(sdkBinaryPath.quoted)")
+            try sh("/usr/bin/lipo", removeArgs + [binaryPath.string, "-o", sdkBinaryPath.string])
                 .waitUntilExit()
 
             return archivePath
         }
 
         return try Xcode.createXCFramework(archivePaths: archivePaths, skipIfExists: options.skipClean)
+    }
+}
+
+private enum FileCompression {
+    case zip
+    case gzip
+    case tarGzip
+
+    init?(_ path: Path) {
+        self.init(path.url)
+    }
+
+    init?(_ url: URL) {
+        switch url.pathExtension {
+        case "zip":
+            self = .zip
+        case "gz":
+            if let ext = Path(url.path).withoutLastExtension().extension {
+                switch ext {
+                case "tar":
+                    self = .tarGzip
+                default:
+                    return nil
+                }
+            } else {
+                self = .gzip
+            }
+        default:
+            return nil
+        }
+    }
+
+    func decompressedName(url: URL) -> String {
+        switch self {
+        case .zip, .gzip:
+            return Path(url.path)
+                .lastComponentWithoutExtension
+        case .tarGzip:
+            return Path(url.path)
+                .withoutLastExtension()
+                .lastComponentWithoutExtension
+        }
     }
 }
