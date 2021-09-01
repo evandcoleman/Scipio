@@ -120,26 +120,24 @@ project '\(projectPath.string)'
     }
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
-        do {
-            try sh("which", "pod")
-                .waitUntilExit()
-        } catch {
+        let ruby = try Ruby()
+        var podCommandPath = try? which("pod")
+
+        if podCommandPath == nil {
             log.info("🍫  Installing CocoaPods...")
 
-            try sh("gem", "install", "cocoapods", asAdministrator: true)
-                .logOutput()
-                .waitUntilExit()
+            try ruby.installGem("cocoapods")
+
+            podCommandPath = try which("pod")
         }
 
         log.info("🍫  Installing Pods...")
 
         let sandboxPath = path + "Pods"
         let manifestPath = path + "Pods/Manifest.lock"
-        let podBinaryPath = try sh("which", "pod")
-            .waitForOutputString()
 
         try path.chdir {
-            try sh(podBinaryPath, "install")
+            try sh(podCommandPath!, "install")
                 .logOutput()
                 .waitUntilExit()
         }
