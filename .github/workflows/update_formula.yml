@@ -37,7 +37,7 @@ jobs:
         
         git add Formula/scipio.rb
         git commit -m "scipio $VERSION"
-        git push --force origin formula/scipio/$VERSION
+        git push origin formula/scipio/$VERSION
 
         echo ::set-output name=version::$VERSION
       env:
@@ -50,8 +50,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.get_version.output.version }}
-        release_name: Release ${{ steps.get_version.output.version }}
+        tag_name: ${{ steps.get_version.outputs.version }}
+        release_name: Release ${{ steps.get_version.outputs.version }}
         draft: false
         prerelease: false
     - name: Open Pull Request
@@ -62,7 +62,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         GITHUB_USER: ${{ secrets.HOMEBREW_GITHUB_USER }}
-        VERSION: ${{ steps.update_formula.output.version }}
+        VERSION: ${{ steps.update_formula.outputs.version }}
     - name: Merge Pull Request
       id: merge_pull_request
       run: |
