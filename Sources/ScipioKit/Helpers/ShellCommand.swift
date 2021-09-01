@@ -1,19 +1,46 @@
 import Foundation
 import PathKit
 
-func sh(_ command: String, _ arguments: String..., asAdministrator: Bool = false) -> ShellCommand {
-    ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator)
+func sh(_ command: Path, _ arguments: String..., asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command.string, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
 
-func sh(_ command: String, _ arguments: [String], asAdministrator: Bool = false) -> ShellCommand {
-    ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator)
+func sh(_ command: String, _ arguments: String..., asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+}
+
+func sh(_ command: String, _ arguments: [String], asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+}
+
+func which(_ command: String) throws -> Path {
+    do {
+        let output = try sh("/usr/bin/which", command, passEnvironment: true)
+            .waitForOutputString()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return Path(output)
+    } catch {
+        throw ShellError.commandNotFound(command)
+    }
+}
+
+public enum ShellError: LocalizedError {
+    case commandNotFound(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .commandNotFound(let command):
+            return "Command '\(command)' could not be found."
+        }
+    }
 }
 
 struct ShellCommand {
 
-    static func sh(command: String, arguments: [String], asAdministrator: Bool = false) -> ShellCommand {
+    static func sh(command: String, arguments: [String], asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
         let shell = ShellCommand(command: command, arguments: arguments)
-        shell.run(asAdministrator: asAdministrator)
+        shell.run(asAdministrator: asAdministrator, passEnvironment: passEnvironment)
         return shell
     }
 
@@ -26,11 +53,15 @@ struct ShellCommand {
 
     private let task = Process()
 
-    func run(asAdministrator: Bool = false) {
+    func run(asAdministrator: Bool = false, passEnvironment: Bool = false) {
         task.standardOutput = outputPipe
         task.standardError = errorPipe
-        if asAdministrator {
 
+        if passEnvironment {
+            task.environment = ProcessInfo.processInfo.environment
+        }
+
+        if asAdministrator {
             let launch: () -> Void = {
                 task.arguments = ["-S"] + [command] + arguments
                 task.launchPath = "/usr/bin/sudo"
@@ -68,14 +99,17 @@ struct ShellCommand {
         }
     }
 
-    func waitForOutput() throws -> Data {
+    func waitForOutput(stdout: Bool = true, stderr: Bool = false) throws -> Data {
         try waitUntilExit()
 
-        return outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let out = stdout ? outputPipe.fileHandleForReading.readDataToEndOfFile() : Data()
+        let err = stderr ? errorPipe.fileHandleForReading.readDataToEndOfFile() : Data()
+
+        return out + err
     }
 
-    func waitForOutputString() throws -> String {
-        return String(data: try waitForOutput(), encoding: .utf8) ?? ""
+    func waitForOutputString(stdout: Bool = true, stderr: Bool = false) throws -> String {
+        return String(data: try waitForOutput(stdout: stdout, stderr: stderr), encoding: .utf8) ?? ""
     }
 
     @discardableResult
