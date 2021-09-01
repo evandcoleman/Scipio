@@ -57,16 +57,15 @@ source "https://rubygems.org"
 
         let bundlePath = try which("bundle")
 
-        try sh(bundlePath, "install", "--gemfile", gemfilePath.string, "--path", path.string)
+        try sh("cd", path.string, bundlePath.string, "install")
             .logOutput()
             .waitUntilExit()
     }
 
     func bundle(exec command: String, _ arguments: String..., at path: Path) throws {
-        let gemfilePath = path + "Gemfile"
         let bundlePath = try which("bundle")
 
-        try sh(bundlePath, ["exec", "--gemfile", gemfilePath.string, "--path", path.string, command] + arguments)
+        try sh("cd", [path.string, bundlePath.string, "exec", command] + arguments)
             .logOutput()
             .waitUntilExit()
     }
