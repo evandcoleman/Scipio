@@ -11,5 +11,6 @@ jobs:
         os: [macos-11]
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: actions/checkout@v2
       - name: Run tests
         run: swift test
