@@ -37,7 +37,7 @@ jobs:
         
         git add Formula/scipio.rb
         git commit -m "scipio $VERSION"
-        git push origin formula/scipio/$VERSION
+        git push --force origin formula/scipio/$VERSION
 
         echo ::set-output name=version::$VERSION
       env:
