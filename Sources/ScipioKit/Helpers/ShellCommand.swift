@@ -11,7 +11,7 @@ func sh(_ command: String, _ arguments: [String], asAdministrator: Bool = false)
 
 struct ShellCommand {
 
-    static func sh(command: String, arguments: [String], asAdministrator: Bool) -> ShellCommand {
+    static func sh(command: String, arguments: [String], asAdministrator: Bool = false) -> ShellCommand {
         let shell = ShellCommand(command: command, arguments: arguments)
         shell.run(asAdministrator: asAdministrator)
         return shell
@@ -30,20 +30,30 @@ struct ShellCommand {
         task.standardOutput = outputPipe
         task.standardError = errorPipe
         if asAdministrator {
-            var buf = [CChar](repeating: 0, count: 8192)
-            if let passphrase = readpassphrase("Password:", &buf, buf.count, 0),
-                let passphraseStr = String(validatingUTF8: passphrase),
-                let data = "\(passphraseStr)\n".data(using: .utf8) {
 
+            let launch: () -> Void = {
                 task.arguments = ["-S"] + [command] + arguments
                 task.launchPath = "/usr/bin/sudo"
                 task.standardInput = inputPipe
 
                 task.launch()
+            }
+            do {
+                try ShellCommand.sh(command: "/usr/bin/sudo", arguments: ["-n", "true"])
+                    .waitUntilExit()
+                launch()
+            } catch {
+                var buf = [CChar](repeating: 0, count: 8192)
+                if let passphrase = readpassphrase("Password:", &buf, buf.count, 0),
+                    let passphraseStr = String(validatingUTF8: passphrase),
+                    let data = "\(passphraseStr)\n".data(using: .utf8) {
 
-                inputPipe.fileHandleForWriting.write(data)
-            } else {
-                log.fatal("Command failed")
+                    launch()
+
+                    inputPipe.fileHandleForWriting.write(data)
+                } else {
+                    log.fatal("Command failed")
+                }
             }
         } else {
             if command.contains("/") {
