@@ -65,9 +65,9 @@ source "https://rubygems.org"
 
         let bundlePath = try which("bundle")
 
-        try sh(bundlePath, "config", "set", "--local", "path", "vendor/bundle", in: path)
-            .logOutput()
-            .waitUntilExit()
+//        try sh(bundlePath, "config", "set", "--local", "path", "vendor/bundle", in: path)
+//            .logOutput()
+//            .waitUntilExit()
 
         try sh(bundlePath, "install", in: path)
             .logOutput()
