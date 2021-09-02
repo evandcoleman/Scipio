@@ -58,6 +58,13 @@ source "https://rubygems.org"
         } catch {
             try installGem("bundler")
         }
+
+        let bundlePath = try which("bundle")
+
+        try sh(bundlePath, "config", "set", "--local", "path", "vendor/bundle", in: path)
+            .logOutput()
+            .waitUntilExit()
+
         do {
             let rakePath = try which("rake")
             try sh(rakePath, "--version")
@@ -65,12 +72,6 @@ source "https://rubygems.org"
         } catch {
             try installGem("rake")
         }
-
-        let bundlePath = try which("bundle")
-
-        try sh(bundlePath, "config", "set", "--local", "path", "vendor/bundle", in: path)
-            .logOutput()
-            .waitUntilExit()
 
         try sh(bundlePath, "install", in: path)
             .logOutput()
