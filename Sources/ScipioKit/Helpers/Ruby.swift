@@ -86,6 +86,16 @@ source "https://rubygems.org"
     }
 
     func run(_ command: String, _ arguments: String..., at path: Path) throws {
+        try sh(try commandPath(command, in: path), arguments, in: path)
+            .logOutput()
+            .waitUntilExit()
+    }
+
+    func commandExists(_ command: String, in path: Path) -> Bool {
+        return (try? commandPath(command, in: path).exists) == true
+    }
+
+    private func commandPath(_ command: String, in path: Path) throws -> Path {
         let versionsPath = path + "vendor/bundle/ruby"
 
         guard let versionPath = try versionsPath.children().first else {
@@ -98,12 +108,6 @@ source "https://rubygems.org"
             throw RubyError.commandNotFound(command)
         }
 
-        try sh(commandPath, [command] + arguments, in: path)
-            .logOutput()
-            .waitUntilExit()
-    }
-
-    func commandExists(_ command: String) -> Bool {
-        return (try? which(command)) != nil
+        return commandPath
     }
 }

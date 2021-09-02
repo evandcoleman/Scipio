@@ -122,9 +122,7 @@ project '\(projectPath.string)'
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
         let ruby = try Ruby()
 
-        do {
-            try ruby.bundle(exec: "pod", "--version", at: path)
-        } catch {
+        if !ruby.commandExists("pod", in: path) {
             log.info("🍫  Installing CocoaPods...")
 
             try ruby.bundle(install: "cocoapods", at: path)
