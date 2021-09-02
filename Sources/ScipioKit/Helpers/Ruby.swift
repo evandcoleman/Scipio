@@ -69,7 +69,7 @@ source "https://rubygems.org"
 //            .logOutput()
 //            .waitUntilExit()
 
-        try sh(bundlePath, "install", in: path)
+        try sh(bundlePath, "install", "--gemfile", gemfilePath.string, in: path)
             .logOutput()
             .waitUntilExit()
     }
