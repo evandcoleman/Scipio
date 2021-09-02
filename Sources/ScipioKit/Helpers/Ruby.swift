@@ -55,6 +55,13 @@ source "https://rubygems.org"
         } catch {
             try installGem("bundler")
         }
+        do {
+            let rakePath = try which("rake")
+            try sh(rakePath, "--version")
+                .waitUntilExit()
+        } catch {
+            try installGem("rake")
+        }
 
         let bundlePath = try which("bundle")
 
