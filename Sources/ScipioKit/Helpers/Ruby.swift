@@ -98,7 +98,7 @@ source "https://rubygems.org"
     private func commandPath(_ command: String, in path: Path) throws -> Path {
         let versionsPath = path + "vendor/bundle/ruby"
 
-        guard let versionPath = try versionsPath.children().first else {
+        guard let versionPath = try versionsPath.children().first(where: { $0.isDirectory }) else {
             throw RubyError.missingRuby
         }
 
