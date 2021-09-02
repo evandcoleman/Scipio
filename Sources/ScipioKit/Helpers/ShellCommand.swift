@@ -1,20 +1,20 @@
 import Foundation
 import PathKit
 
-func sh(_ command: Path, _ arguments: String..., asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
-    ShellCommand.sh(command: command.string, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+func sh(_ command: Path, _ arguments: String..., in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command.string, arguments: arguments, in: path, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
 
-func sh(_ command: Path, _ arguments: [String], asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
-    ShellCommand.sh(command: command.string, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+func sh(_ command: Path, _ arguments: [String], in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command.string, arguments: arguments, in: path, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
 
-func sh(_ command: String, _ arguments: String..., asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
-    ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+func sh(_ command: String, _ arguments: String..., in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command, arguments: arguments, in: path, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
 
-func sh(_ command: String, _ arguments: [String], asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
-    ShellCommand.sh(command: command, arguments: arguments, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+func sh(_ command: String, _ arguments: [String], in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    ShellCommand.sh(command: command, arguments: arguments, in: path, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
 }
 
 @discardableResult
@@ -43,9 +43,9 @@ public enum ShellError: LocalizedError {
 
 struct ShellCommand {
 
-    static func sh(command: String, arguments: [String], asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
+    static func sh(command: String, arguments: [String], in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
         let shell = ShellCommand(command: command, arguments: arguments)
-        shell.run(asAdministrator: asAdministrator, passEnvironment: passEnvironment)
+        shell.run(in: path, asAdministrator: asAdministrator, passEnvironment: passEnvironment)
         return shell
     }
 
@@ -58,7 +58,7 @@ struct ShellCommand {
 
     private let task = Process()
 
-    func run(asAdministrator: Bool = false, passEnvironment: Bool = false) {
+    func run(in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) {
         task.standardOutput = outputPipe
         task.standardError = errorPipe
 
@@ -68,9 +68,15 @@ struct ShellCommand {
 
         if asAdministrator {
             let launch: () -> Void = {
+                if let path = path {
+                    task.currentDirectoryURL = path.url
+                }
+
                 task.arguments = ["-S"] + [command] + arguments
                 task.launchPath = "/usr/bin/sudo"
                 task.standardInput = inputPipe
+
+                log.verbose(task.launchPath ?? "", task.arguments?.joined(separator: " ") ?? "")
 
                 task.launch()
             }
@@ -92,13 +98,19 @@ struct ShellCommand {
                 }
             }
         } else {
+            if let path = path {
+                task.currentDirectoryURL = path.url
+            }
+
             if command.contains("/") {
                 task.arguments = arguments
                 task.launchPath = command
             } else {
-                task.arguments = ["-c", command] + arguments
                 task.launchPath = "/bin/bash"
+                task.arguments = ["-c", command] + arguments
             }
+
+            log.verbose(task.launchPath ?? "", task.arguments?.joined(separator: " ") ?? "")
 
             task.launch()
         }
