@@ -69,13 +69,11 @@ struct ShellCommand {
         if asAdministrator {
             let launch: () -> Void = {
                 if let path = path {
-                    task.arguments = ["-c", #""cd \#(path.string) && /usr/bin/sudo -S \#(([command] + arguments).joined(separator: " "))""#]
-                    task.launchPath = "/bin/bash"
-                } else {
-                    task.arguments = ["-S"] + [command] + arguments
-                    task.launchPath = "/usr/bin/sudo"
+                    task.currentDirectoryURL = path.url
                 }
 
+                task.arguments = ["-S"] + [command] + arguments
+                task.launchPath = "/usr/bin/sudo"
                 task.standardInput = inputPipe
 
                 log.verbose(task.launchPath ?? "", task.arguments?.joined(separator: " ") ?? "")
@@ -100,13 +98,15 @@ struct ShellCommand {
                 }
             }
         } else {
-            if command.contains("/"), path == nil {
+            if let path = path {
+                task.currentDirectoryURL = path.url
+            }
+
+            if command.contains("/") {
                 task.arguments = arguments
                 task.launchPath = command
-            } else if let path = path {
-                task.arguments = ["-c", #""cd \#(path.string) && \#(([command] + arguments).joined(separator: " "))""#]
-                task.launchPath = "/bin/bash"
             } else {
+                task.launchPath = "/bin/bash"
                 task.arguments = ["-c", command] + arguments
             }
 

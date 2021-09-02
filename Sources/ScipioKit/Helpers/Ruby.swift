@@ -14,7 +14,7 @@ public enum RubyError: LocalizedError {
 
 struct Ruby {
 
-    private let rubyPath: Path
+    let rubyPath: Path
     private let gemPath: Path
 
     init() throws {
@@ -49,13 +49,18 @@ source "https://rubygems.org"
         log.verbose("Installing gems from Gemfile at ", path.string, "\n", gemfileContents)
 
         do {
-            try sh("bundle", "--version")
+            let bundlePath = try which("bundle")
+            try sh(bundlePath, "--version")
                 .waitUntilExit()
         } catch {
             try installGem("bundler")
         }
 
         let bundlePath = try which("bundle")
+
+        try sh(bundlePath, "config", "set", "--local", "path", "vendor/bundle", in: path)
+            .logOutput()
+            .waitUntilExit()
 
         try sh(bundlePath, "install", in: path)
             .logOutput()
