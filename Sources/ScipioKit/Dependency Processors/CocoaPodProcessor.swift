@@ -6,18 +6,8 @@ import Regex
 import XcodeGenKit
 import XcodeProj
 
-public enum CocoaPodProcessorError: LocalizedError {
-    case cocoaPodsNotInstalled
+public enum CocoaPodProcessorError: Error {
     case missingVersion(CocoaPodDependency)
-
-    public var errorDescription: String? {
-        switch self {
-        case .cocoaPodsNotInstalled:
-            return "CocoaPods must be installed to use CocoaPod dependencies. Please refer to https://cocoapods.org and ensure that the \"pod\" command is available in your PATH."
-        case .missingVersion(let dependency):
-            return "\(dependency.name) is missing version information from the CocoaPods manifest."
-        }
-    }
 }
 
 public final class CocoaPodProcessor: DependencyProcessor {
@@ -130,19 +120,23 @@ project '\(projectPath.string)'
     }
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
+        let ruby = try Ruby()
+
         do {
-            let podCommandPath = try which("pod")
+            try ruby.bundle(exec: "pod", "--version", at: path)
+        } catch {
+            log.info("🍫  Installing CocoaPods...")
 
-            log.info("🍫  Installing Pods...")
-
-            try sh(podCommandPath, "install", in: path)
-                .waitUntilExit()
-        } catch ShellError.commandNotFound {
-            throw CocoaPodProcessorError.cocoaPodsNotInstalled
+            try ruby.bundle(install: "cocoapods", at: path)
         }
+
+        log.info("🍫  Installing Pods...")
 
         let sandboxPath = path + "Pods"
         let manifestPath = path + "Pods/Manifest.lock"
+
+        try ruby.bundle(exec: "pod", "install", "--project-directory=\(path.string)", at: path)
+
         let podsProjectPath = sandboxPath + "Pods.xcodeproj"
         let project = try XcodeProj(path: podsProjectPath)
         let lockFile: String = try manifestPath.read()
