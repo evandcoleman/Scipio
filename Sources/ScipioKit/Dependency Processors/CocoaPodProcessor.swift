@@ -135,7 +135,7 @@ project '\(projectPath.string)'
         let sandboxPath = path + "Pods"
         let manifestPath = path + "Pods/Manifest.lock"
 
-        try ruby.bundle(exec: "pod", "install", at: path)
+        try ruby.run("pod", "install", at: path)
 
         let podsProjectPath = sandboxPath + "Pods.xcodeproj"
         let project = try XcodeProj(path: podsProjectPath)

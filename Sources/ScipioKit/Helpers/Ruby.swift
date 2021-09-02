@@ -3,11 +3,14 @@ import PathKit
 
 public enum RubyError: LocalizedError {
     case missingRuby
+    case commandNotFound(String)
 
     public var errorDescription: String? {
         switch self {
         case .missingRuby:
             return "A Ruby installation that is not provided by the system is required to use CocoaPods dependencies. Please install Ruby via rbenv, rvm, or Homebrew."
+        case .commandNotFound(let command):
+            return "Ruby command '\(command)' could not be found."
         }
     }
 }
@@ -65,11 +68,11 @@ source "https://rubygems.org"
 
         let bundlePath = try which("bundle")
 
-//        try sh(bundlePath, "config", "set", "--local", "path", "vendor/bundle", in: path)
-//            .logOutput()
-//            .waitUntilExit()
+        try sh(bundlePath, "config", "set", "--local", "path", "vendor/bundle", in: path)
+            .logOutput()
+            .waitUntilExit()
 
-        try sh(bundlePath, "install", "--gemfile", gemfilePath.string, in: path)
+        try sh(bundlePath, "install", in: path)
             .logOutput()
             .waitUntilExit()
     }
@@ -78,6 +81,24 @@ source "https://rubygems.org"
         let bundlePath = try which("bundle")
 
         try sh(bundlePath, ["exec", command] + arguments, in: path)
+            .logOutput()
+            .waitUntilExit()
+    }
+
+    func run(_ command: String, _ arguments: String..., at path: Path) throws {
+        let versionsPath = path + "vendor/bundle/ruby"
+
+        guard let versionPath = try versionsPath.children().first else {
+            throw RubyError.missingRuby
+        }
+
+        let binPath = versionPath + "bin"
+
+        guard let commandPath = binPath.glob(command).first else {
+            throw RubyError.commandNotFound(command)
+        }
+
+        try sh(commandPath, [command] + arguments, in: path)
             .logOutput()
             .waitUntilExit()
     }
