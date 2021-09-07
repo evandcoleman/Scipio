@@ -292,11 +292,10 @@ public final class PackageProcessor: DependencyProcessor {
 
         if let _ = productRegex.firstMatch(in: contents) {
             // TODO: This should be rewritten using the Regex library
-            try path.chdir {
-                try sh("perl", #" -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g' Package.swift"#).waitUntilExit()
-                try sh("perl", #" -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g' Package.swift"#).waitUntilExit()
-                try sh("perl", #" -i -p0e 's/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g' Package.swift"#).waitUntilExit()
-            }
+            let packagePath = path + "Package.swift"
+            try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g"#, packagePath.string).logOutput().waitUntilExit()
+            try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g"#, packagePath.string).logOutput().waitUntilExit()
+            try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g"#, packagePath.string).logOutput().waitUntilExit()
         } else {
             let insertRegex = Regex(#"products:[^\[]*\["#)
             guard let match = insertRegex.firstMatch(in: contents)?.range else {
