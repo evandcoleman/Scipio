@@ -59,7 +59,8 @@ public final class CocoaPodProcessor: DependencyProcessor {
                         scheme: scheme,
                         in: self.projectPath.parent() + "\(self.projectPath.lastComponentWithoutExtension).xcworkspace",
                         for: sdk,
-                        derivedDataPath: derivedDataPath
+                        derivedDataPath: derivedDataPath,
+                        additionalBuildSettings: dependency?.additionalBuildSettings
                     )
                 }
 

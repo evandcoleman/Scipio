@@ -7,14 +7,17 @@ struct Xcode {
         return Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
     }
 
-    static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path, sourcePackagesPath: Path? = nil) throws -> Path {
+    static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path, sourcePackagesPath: Path? = nil, additionalBuildSettings: [String: String]?) throws -> Path {
 
-        let buildSettings: [String: String] = [
+        var buildSettings: [String: String] = [
             "BUILD_LIBRARY_FOR_DISTRIBUTION": "YES",
             "SKIP_INSTALL": "NO",
-            "ENABLE_BITCODE": "NO",
             "INSTALL_PATH": "/Library/Frameworks"
         ]
+
+        if let additionalBuildSettings = additionalBuildSettings {
+            buildSettings.merge(additionalBuildSettings) { l, r in r }
+        }
 
         let archivePath = getArchivePath(for: scheme, sdk: sdk)
 

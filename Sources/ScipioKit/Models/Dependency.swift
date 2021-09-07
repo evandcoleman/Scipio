@@ -41,6 +41,7 @@ public struct CocoaPodDependency: Dependency {
     public let from: String?
     public let git: URL?
     public let excludes: [String]?
+    public let additionalBuildSettings: [String: String]?
 }
 
 public struct PackageDependency: Dependency {
@@ -50,6 +51,7 @@ public struct PackageDependency: Dependency {
     public let revision: String?
     public let branch: String?
     public let exactVersion: String?
+    public let additionalBuildSettings: [String: String]?
 
     public var versionRequirement: SwiftPackage.VersionRequirement {
         if let from = from {
