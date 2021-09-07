@@ -120,7 +120,8 @@ public final class PackageProcessor: DependencyProcessor {
                 } else {
                     xcFrameworks <<< try self.buildAndExport(
                         buildable: product,
-                        package: resolvedDependency
+                        package: resolvedDependency,
+                        dependency: dependency
                     )
                 }
             }
@@ -226,7 +227,7 @@ public final class PackageProcessor: DependencyProcessor {
         try path.delete()
     }
 
-    private func buildAndExport(buildable: SwiftPackageBuildable, package: SwiftPackageDescriptor) throws -> [Artifact] {
+    private func buildAndExport(buildable: SwiftPackageBuildable, package: SwiftPackageDescriptor, dependency: PackageDependency?) throws -> [Artifact] {
         var path: Path? = nil
 
         let archivePaths = try options.platforms.sdks.map { sdk -> Path in
@@ -246,7 +247,8 @@ public final class PackageProcessor: DependencyProcessor {
                 scheme: buildable.name,
                 in: path!,
                 for: sdk,
-                derivedDataPath: derivedDataPath
+                derivedDataPath: derivedDataPath,
+                additionalBuildSettings: dependency?.additionalBuildSettings
             )
 
             try copyModulesAndHeaders(
