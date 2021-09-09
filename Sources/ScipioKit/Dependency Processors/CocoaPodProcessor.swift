@@ -186,7 +186,15 @@ private extension CocoaPodDependency {
         var result = "pod '\(name)'"
 
         if let git = git {
-            result += ", :git => '\(git)'"
+            result += ", :git => '\(git.absoluteString)'"
+
+            if let commit = commit {
+                result += ", :commit => '\(commit)'"
+            } else if let branch = branch {
+                result += ", :branch => '\(branch)'"
+            }
+        } else if let podspec = podspec {
+            result += ", :podspec => '\(podspec.absoluteString)'"
         } else if let version = version {
             result += ", '\(version)'"
         } else if let from = from {
