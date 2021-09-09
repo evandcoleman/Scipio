@@ -40,6 +40,9 @@ public struct CocoaPodDependency: Dependency {
     public let version: String?
     public let from: String?
     public let git: URL?
+    public let branch: String?
+    public let commit: String?
+    public let podspec: URL?
     public let excludes: [String]?
     public let additionalBuildSettings: [String: String]?
 }
