@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "Scipio",
     platforms: [
-        .macOS(.v11)
+        .macOS(.v10_15)
     ],
     products: [
         .executable(name: "Scipio", targets: ["Scipio"])
