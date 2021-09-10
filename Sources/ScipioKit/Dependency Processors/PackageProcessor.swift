@@ -131,6 +131,7 @@ public final class PackageProcessor: DependencyProcessor {
         .flatMap { frameworks, downloads -> AnyPublisher<[AnyArtifact], Error> in
             return downloads
                 .publisher
+                .setFailureType(to: Error.self)
                 .flatMap(maxPublishers: .max(1)) { $0 }
                 .collect()
                 .map { frameworks + $0 }
