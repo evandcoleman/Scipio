@@ -47,7 +47,7 @@ public final class CocoaPodProcessor: DependencyProcessor {
         return Future.try {
             let derivedDataPath = Config.current.cachePath + "DerivedData" + Config.current.name
 
-            let paths = try self.options.platforms.flatMap { platform -> [Path] in
+            var paths = try self.options.platforms.flatMap { platform -> [Path] in
                 let archivePaths = try platform.sdks.map { sdk -> Path in
                     let scheme = "\(resolvedDependency.name)-\(platform.rawValue)"
 
@@ -70,6 +70,25 @@ public final class CocoaPodProcessor: DependencyProcessor {
                     filter: { !$0.hasPrefix("Pods_") && $0 != "\(resolvedDependency.name)-\(platform.rawValue)" && resolvedDependency.productNames?.contains($0) == true }
                 )
             }
+
+            let vendoredFrameworks = try resolvedDependency
+                .vendoredFrameworks
+                .filter { dependency?.excludes?.contains($0.lastComponentWithoutExtension) != true }
+                .map { path -> Path in
+                    let targetPath = Config.current.buildPath + path.lastComponent
+
+                    if targetPath.exists, !self.options.skipClean {
+                        try targetPath.delete()
+                    }
+
+                    if !targetPath.exists {
+                        try path.copy(targetPath)
+                    }
+
+                    return targetPath
+                }
+
+            paths <<< vendoredFrameworks
 
             return paths.compactMap { path in
                 return AnyArtifact(Artifact(
@@ -131,15 +150,16 @@ project '\(projectPath.string)'
     }
 
     private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
-        do {
-            let podCommandPath = try which("pod")
+        let podCommandPath = try which("pod")
 
+        do {
             log.info("🍫  Installing Pods...")
 
             try sh(podCommandPath, "install", in: path)
-                .waitUntilExit()
         } catch ShellError.commandNotFound {
             throw CocoaPodProcessorError.cocoaPodsNotInstalled
+        } catch ScipioError.commandFailed(_, _, let output, _) where output?.contains("could not find compatible versions") == true {
+            try sh(podCommandPath, "install", "--repo-update", in: path)
         }
 
         let sandboxPath = path + "Pods"
@@ -149,7 +169,7 @@ project '\(projectPath.string)'
         let lockFile: String = try manifestPath.read()
 
         return try dependencies.map { dependency in
-            let productNames = project.productNames(for: dependency.name)
+            let projectProducts = project.productNames(for: dependency.name, podsRoot: sandboxPath)
             let versionRegex = try Regex(string: "- \(dependency.name)\\s\\((.*)\\)")
             let match = versionRegex.firstMatch(in: lockFile)
 
@@ -157,15 +177,27 @@ project '\(projectPath.string)'
                 throw CocoaPodProcessorError.missingVersion(dependency)
             }
 
-            let versions: [String: String] = try productNames
-                .map { (product: $0, regex: try Regex(string: "- \($0)\\s\\((.*)\\)")) }
+            let versions: [String: String] = try projectProducts
+                .map { (product: $0.name, regex: try Regex(string: "- \($0.name)\\s\\((.*)\\)")) }
                 .reduce(into: [:]) { $0[$1.product] = $1.regex.firstMatch(in: lockFile)?.captures.last??.components(separatedBy: " ").last ?? version }
+            let filteredProductNames = projectProducts
+                .map(\.name)
+                .filter { dependency.excludes?.contains($0) != true }
+            let vendoredFrameworks = projectProducts
+                .compactMap { projectProduct -> Path? in
+                    switch projectProduct {
+                    case .product:
+                        return nil
+                    case .path(let path):
+                        return path
+                    }
+                }
 
             return CocoaPodDescriptor(
                 name: dependency.name,
                 resolvedVersions: versions,
-                productNames: productNames
-                    .filter { dependency.excludes?.contains($0) != true }
+                productNames: filteredProductNames,
+                vendoredFrameworks: vendoredFrameworks
             )
         }
     }
@@ -175,6 +207,7 @@ public struct CocoaPodDescriptor: DependencyProducts {
     public let name: String
     public let resolvedVersions: [String: String]
     public let productNames: [String]?
+    public let vendoredFrameworks: [Path]
 
     public func version(for productName: String) -> String {
         return resolvedVersions[productName]!

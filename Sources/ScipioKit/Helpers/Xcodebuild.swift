@@ -53,16 +53,14 @@ public struct Xcodebuild {
 
         let arguments = getArguments()
         log.verbose((["xcodebuild"] + arguments).joined(separator: " "))
-        try sh("/usr/bin/xcodebuild", arguments)
-            .onReadLine { line in
-                if log.level.levelValue <= Log.Level.verbose.levelValue {
-                    log.verbose(line)
-                } else {
-                    guard let formatted = parser.parse(line: line, colored: log.useColors) else { return }
-                    output.write(parser.outputType, formatted)
-                }
+        try sh("/usr/bin/xcodebuild", arguments) { line in
+            if log.level.levelValue <= Log.Level.verbose.levelValue {
+                log.verbose(line)
+            } else {
+                guard let formatted = parser.parse(line: line, colored: log.useColors) else { return }
+                output.write(parser.outputType, formatted)
             }
-            .waitUntilExit()
+        }
 
         if let summary = parser.summary {
             print(summary.format())
