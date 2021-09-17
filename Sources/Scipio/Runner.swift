@@ -12,26 +12,33 @@ enum Runner {
         )
 
         var artifacts: [AnyArtifact] = []
+        var resolvedDependencies: [DependencyProducts] = []
 
         if let packages = Config.current.packages, !packages.isEmpty {
             let processor = PackageProcessor(dependencies: packages, options: processorOptions)
             let filtered = dependencies?
                 .compactMap { name in packages.first { $0.name == name } }
-            artifacts <<< try processor.process(dependencies: filtered).wait()
+            let (a, r) = try processor.process(dependencies: filtered, accumulatedResolvedDependencies: resolvedDependencies).wait() ?? ([], [])
+            artifacts <<< a
+            resolvedDependencies <<< r
         }
 
         if let binaries = Config.current.binaries, !binaries.isEmpty {
             let processor = BinaryProcessor(dependencies: binaries, options: processorOptions)
             let filtered = dependencies?
                 .compactMap { name in binaries.first { $0.name == name } }
-            artifacts <<< try processor.process(dependencies: filtered).wait()
+            let (a, r) = try processor.process(dependencies: filtered, accumulatedResolvedDependencies: resolvedDependencies).wait() ?? ([], [])
+            artifacts <<< a
+            resolvedDependencies <<< r
         }
 
         if let pods = Config.current.pods, !pods.isEmpty {
             let processor = CocoaPodProcessor(dependencies: pods, options: processorOptions)
             let filtered = dependencies?
                 .compactMap { name in pods.first { $0.name == name } }
-            artifacts <<< try processor.process(dependencies: filtered).wait()
+            let (a, r) = try processor.process(dependencies: filtered, accumulatedResolvedDependencies: resolvedDependencies).wait() ?? ([], [])
+            artifacts <<< a
+            resolvedDependencies <<< r
         }
 
         return artifacts

@@ -24,11 +24,11 @@ public protocol DependencyProducts {
 }
 
 extension DependencyProcessor {
-    public func process(dependencies onlyDependencies: [Input]? = nil) -> AnyPublisher<[AnyArtifact], Error> {
+    public func process(dependencies onlyDependencies: [Input]? = nil, accumulatedResolvedDependencies: [DependencyProducts]) -> AnyPublisher<([AnyArtifact], [DependencyProducts]), Error> {
         return preProcess()
-            .tryFlatMap { dependencyProducts -> AnyPublisher<[[AnyArtifact]], Error> in
+            .tryFlatMap { dependencyProducts -> AnyPublisher<([AnyArtifact], [DependencyProducts]), Error> in
 
-                let conflictingDependencies: [String: [String]] = dependencyProducts
+                let conflictingDependencies: [String: [String]] = (dependencyProducts + accumulatedResolvedDependencies)
                     .reduce(into: [:]) { accumulated, dependency in
                         let productNames = Dictionary(
                             uniqueKeysWithValues: (dependency.productNames ?? [])
@@ -119,9 +119,9 @@ extension DependencyProcessor {
                             .eraseToAnyPublisher()
                     }
                     .collect()
+                    .map { ($0.flatMap { $0 }, dependencyProducts) }
                     .eraseToAnyPublisher()
             }
-            .map { $0.flatMap { $0 } }
             .flatMap { next in self.postProcess().map { _ in next } }
             .eraseToAnyPublisher()
     }

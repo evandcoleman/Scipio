@@ -16,8 +16,14 @@ public struct BinaryDependency: Dependency, DependencyProducts {
         let names = try? productNamesCachePath.read()
             .components(separatedBy: ",")
             .filter { !$0.isEmpty }
+            .nilIfEmpty
 
-        return names?.isEmpty == true ? nil : names
+        if let excludes = excludes {
+            return names?
+                .filter { !excludes.contains($0) }
+        }
+
+        return names
     }
 
     public var productNamesCachePath: Path {

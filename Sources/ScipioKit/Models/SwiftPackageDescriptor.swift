@@ -66,7 +66,7 @@ public struct PackageManifest: Codable, Equatable {
         } else {
             log.verbose("Reading Package.swift for \(path.lastComponent)")
             data = try sh("/usr/bin/swift", "package", "dump-package", "--package-path", "\(path.string)")
-                .waitForOutput()
+                .output()
             try cachedManifestPath.write(data)
         }
         let decoder = JSONDecoder()
@@ -217,7 +217,8 @@ public enum SwiftPackageBuildable: Equatable, Hashable {
                 return url.lastPathComponent
                     .components(separatedBy: ".")[0]
             } else if let path = target.path {
-                return path.components(separatedBy: ".")[0]
+                return Path(path).lastComponent
+                    .components(separatedBy: ".")[0]
             } else {
                 return target.name
             }
