@@ -217,7 +217,8 @@ public enum SwiftPackageBuildable: Equatable, Hashable {
                 return url.lastPathComponent
                     .components(separatedBy: ".")[0]
             } else if let path = target.path {
-                return path.components(separatedBy: ".")[0]
+                return Path(path).lastComponent
+                    .components(separatedBy: ".")[0]
             } else {
                 return target.name
             }

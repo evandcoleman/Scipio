@@ -41,7 +41,7 @@ public enum ShellError: LocalizedError {
     }
 }
 
-struct ShellCommand {
+final class ShellCommand {
 
     static func sh(command: String, arguments: [String], in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) -> ShellCommand {
         let shell = ShellCommand(command: command, arguments: arguments)
@@ -57,6 +57,13 @@ struct ShellCommand {
     let inputPipe = Pipe()
 
     private let task = Process()
+    private var outputString: String?
+    private var outputQueue = DispatchQueue(label: "outputQueue")
+
+    init(command: String, arguments: [String]) {
+        self.command = command
+        self.arguments = arguments
+    }
 
     func run(in path: Path? = nil, asAdministrator: Bool = false, passEnvironment: Bool = false) {
         task.standardOutput = outputPipe
@@ -69,16 +76,16 @@ struct ShellCommand {
         if asAdministrator {
             let launch: () -> Void = {
                 if let path = path {
-                    task.currentDirectoryURL = path.url
+                    self.task.currentDirectoryURL = path.url
                 }
 
-                task.arguments = ["-S"] + [command] + arguments
-                task.launchPath = "/usr/bin/sudo"
-                task.standardInput = inputPipe
+                self.task.arguments = ["-S"] + [self.command] + self.arguments
+                self.task.launchPath = "/usr/bin/sudo"
+                self.task.standardInput = self.inputPipe
 
-                log.verbose(task.launchPath ?? "", task.arguments?.joined(separator: " ") ?? "")
+                log.verbose(self.task.launchPath ?? "", self.task.arguments?.joined(separator: " ") ?? "")
 
-                task.launch()
+                self.task.launch()
             }
             do {
                 try ShellCommand.sh(command: "/usr/bin/sudo", arguments: ["-n", "true"])
@@ -149,14 +156,37 @@ struct ShellCommand {
 
     @discardableResult
     func logOutput() -> ShellCommand {
-        onReadLine { log.verbose($0) }
+        outputQueue.async {
+            self.outputString = ""
+        }
+        
+        return onReadLine { [weak self] line in
+            self?.outputQueue.async {
+                self?.outputString?.append(line)
+            }
+            log.verbose(line)
+        }
     }
 
     func waitUntilExit() throws {
         task.waitUntilExit()
 
         if task.terminationStatus > 0 {
-            throw ScipioError.commandFailed(command: ([command] + arguments).joined(separator: " "), status: Int(task.terminationStatus), output: String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8))
+            let outputHandle = outputPipe.fileHandleForReading
+            let errorHandle = errorPipe.fileHandleForReading
+
+            throw ScipioError.commandFailed(
+                command: ([command] + arguments).joined(separator: " "),
+                status: Int(task.terminationStatus),
+                output: outputString ?? String(
+                    data: outputHandle.readDataToEndOfFile(),
+                    encoding: .utf8
+                ),
+                error: String(
+                    data: errorHandle.readDataToEndOfFile(),
+                    encoding: .utf8
+                )
+            )
         }
     }
 }
