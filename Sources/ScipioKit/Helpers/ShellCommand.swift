@@ -147,6 +147,9 @@ final class ShellCommand {
                 )
             )
         }
+
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        errorPipe.fileHandleForReading.readabilityHandler = nil
     }
 
     func output(stdout: Bool = true, stderr: Bool = false) throws -> Data {

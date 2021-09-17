@@ -73,9 +73,17 @@ public final class CocoaPodProcessor: DependencyProcessor {
 
             let vendoredFrameworks = try resolvedDependency
                 .vendoredFrameworks
+                .filter { dependency?.excludes?.contains($0.lastComponentWithoutExtension) != true }
                 .map { path -> Path in
                     let targetPath = Config.current.buildPath + path.lastComponent
-                    try path.copy(targetPath)
+
+                    if targetPath.exists, !self.options.skipClean {
+                        try targetPath.delete()
+                    }
+
+                    if !targetPath.exists {
+                        try path.copy(targetPath)
+                    }
 
                     return targetPath
                 }

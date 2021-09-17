@@ -58,7 +58,11 @@ extension PBXTarget {
                     return contents
                         .components(separatedBy: "\n")
                         .compactMap { pathString in
-                            let path = Path(pathString)
+                            let path = podsRoot + Path(
+                                pathString
+                                    .replacingOccurrences(of: "${PODS_ROOT}/", with: "")
+                                    .replacingOccurrences(of: "$PODS_ROOT/", with: "")
+                            )
 
                             return path.extension == "xcframework" ? .path(path) : nil
                         }
