@@ -71,7 +71,13 @@ public struct PackageManifest: Codable, Equatable {
         }
         let decoder = JSONDecoder()
 
-        return try decoder.decode(PackageManifest.self, from: data)
+        do {
+            return try decoder.decode(PackageManifest.self, from: data)
+        } catch {
+            try cachedManifestPath.delete()
+
+            return try load(from: path)
+        }
     }
 
     public func getBuildables() -> [SwiftPackageBuildable] {
