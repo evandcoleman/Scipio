@@ -66,7 +66,7 @@ public struct PackageManifest: Codable, Equatable {
         } else {
             log.verbose("Reading Package.swift for \(path.lastComponent)")
             data = try sh("/usr/bin/swift", "package", "dump-package", "--package-path", "\(path.string)")
-                .waitForOutput()
+                .output()
             try cachedManifestPath.write(data)
         }
         let decoder = JSONDecoder()

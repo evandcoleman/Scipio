@@ -148,14 +148,10 @@ project '\(projectPath.string)'
             log.info("🍫  Installing Pods...")
 
             try sh(podCommandPath, "install", in: path)
-                .logOutput()
-                .waitUntilExit()
         } catch ShellError.commandNotFound {
             throw CocoaPodProcessorError.cocoaPodsNotInstalled
         } catch ScipioError.commandFailed(_, _, let output, _) where output?.contains("could not find compatible versions") == true {
             try sh(podCommandPath, "install", "--repo-update", in: path)
-                .logOutput()
-                .waitUntilExit()
         }
 
         let sandboxPath = path + "Pods"

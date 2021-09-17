@@ -235,7 +235,7 @@ public final class BinaryProcessor: DependencyProcessor {
         }
 
         let rawArchitectures = try sh("/usr/bin/lipo", "-info", binaryPath.string)
-            .waitForOutputString()
+            .outputString()
             .components(separatedBy: ":")
             .last?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -284,7 +284,6 @@ public final class BinaryProcessor: DependencyProcessor {
             let sdkBinaryPath = frameworksFolder + "\(input.lastComponent)/\(frameworkName)"
 
             try sh("/usr/bin/lipo", removeArgs + [binaryPath.string, "-o", sdkBinaryPath.string])
-                .waitUntilExit()
 
             return archivePath
         }
