@@ -35,6 +35,13 @@ extension XcodeProj {
             .filter { !$0.name.isEmpty }
             .uniqued()
     }
+
+    func resourceBundles(for targetName: String, podsRoot: Path, notIn notInProjectProducts: [ProjectProduct]) -> [Path] {
+        return pbxproj
+            .targets(named: targetName)
+            .flatMap { $0.resourceBundles(podsRoot: podsRoot, notIn: notInProjectProducts) }
+            .uniqued()
+    }
 }
 
 extension PBXTarget {
@@ -78,5 +85,48 @@ extension PBXTarget {
         }
 
         return names
+    }
+
+    func resourceBundles(podsRoot: Path, notIn notInProjectProducts: [ProjectProduct]) -> [Path] {
+        var paths: [Path] = []
+
+        let resourceBundlePaths = buildPhases
+            .flatMap { $0.inputFileListPaths ?? [] }
+            .flatMap { path -> [Path] in
+                let fixedPath = path
+                    .replacingOccurrences(of: "${PODS_ROOT}/", with: "")
+                    .replacingOccurrences(of: "$PODS_ROOT/", with: "")
+                    .replacingOccurrences(of: "${CONFIGURATION}", with: "Release")
+                    .replacingOccurrences(of: "$CONFIGURATION", with: "Release")
+                let contents = (try? (podsRoot + Path(fixedPath)).read()) ?? ""
+
+                return contents
+                    .components(separatedBy: "\n")
+                    .compactMap { pathString -> Path? in
+                        let path = podsRoot + Path(
+                            pathString
+                                .replacingOccurrences(of: "${PODS_ROOT}/", with: "")
+                                .replacingOccurrences(of: "$PODS_ROOT/", with: "")
+                                .replacingOccurrences(of: "${CONFIGURATION}", with: "Release")
+                                .replacingOccurrences(of: "$CONFIGURATION", with: "Release")
+                        )
+
+                        return path.extension == "bundle" ? path : nil
+                    }
+                    .filter { path in
+                        return !notInProjectProducts
+                            .contains { path.components.contains("\($0.name).xcframework") }
+                    }
+            }
+
+        paths <<< resourceBundlePaths
+
+        for dependency in dependencies {
+            if let target = dependency.target {
+                paths <<< target.resourceBundles(podsRoot: podsRoot, notIn: notInProjectProducts)
+            }
+        }
+
+        return paths
     }
 }

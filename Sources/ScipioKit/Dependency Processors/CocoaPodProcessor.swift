@@ -36,9 +36,9 @@ public final class CocoaPodProcessor: DependencyProcessor {
         return Future.try {
             let path = Config.current.cachePath + Config.current.name
 
-            _ = try self.writePodfile(in: path)
+            let (_, projectPath) = try self.writePodfile(in: path)
 
-            return try self.installPods(in: path)
+            return try self.installPods(in: path, projectPath: projectPath)
         }
         .eraseToAnyPublisher()
     }
@@ -83,6 +83,18 @@ public final class CocoaPodProcessor: DependencyProcessor {
 
                     if !targetPath.exists {
                         try path.copy(targetPath)
+
+                        if !resolvedDependency.resourceBundles.isEmpty {
+                            let resourcesPath = targetPath + "Resources"
+
+                            if !resourcesPath.exists {
+                                try resourcesPath.mkdir()
+                            }
+
+                            for bundlePath in resolvedDependency.resourceBundles {
+                                try bundlePath.copy(resourcesPath + bundlePath.lastComponent)
+                            }
+                        }
                     }
 
                     return targetPath
@@ -149,7 +161,7 @@ project '\(projectPath.string)'
         return (podfilePath, projectPath)
     }
 
-    private func installPods(in path: Path) throws -> [CocoaPodDescriptor] {
+    private func installPods(in path: Path, projectPath: Path) throws -> [CocoaPodDescriptor] {
         let podCommandPath = try which("pod")
 
         do {
@@ -166,6 +178,7 @@ project '\(projectPath.string)'
         let manifestPath = path + "Pods/Manifest.lock"
         let podsProjectPath = sandboxPath + "Pods.xcodeproj"
         let project = try XcodeProj(path: podsProjectPath)
+        let parentProject = try XcodeProj(path: projectPath)
         let lockFile: String = try manifestPath.read()
 
         return try dependencies.map { dependency in
@@ -192,12 +205,18 @@ project '\(projectPath.string)'
                         return path
                     }
                 }
+            let resourceBundles = vendoredFrameworks.isEmpty ? [] : parentProject.resourceBundles(
+                for: "\(dependency.name)-\(options.platforms[0].rawValue)",
+                podsRoot: sandboxPath,
+                notIn: projectProducts
+            )
 
             return CocoaPodDescriptor(
                 name: dependency.name,
                 resolvedVersions: versions,
                 productNames: filteredProductNames,
-                vendoredFrameworks: vendoredFrameworks
+                vendoredFrameworks: vendoredFrameworks,
+                resourceBundles: resourceBundles
             )
         }
     }
@@ -208,6 +227,7 @@ public struct CocoaPodDescriptor: DependencyProducts {
     public let resolvedVersions: [String: String]
     public let productNames: [String]?
     public let vendoredFrameworks: [Path]
+    public let resourceBundles: [Path]
 
     public func version(for productName: String) -> String {
         return resolvedVersions[productName]!
