@@ -51,6 +51,14 @@ public struct Config: Decodable, Equatable {
         return path
     }()
 
+    public var packageRoot: Path {
+        if let localCache = cacheDelegator.local {
+            return localCache.normalizedPath
+        } else {
+            return directory
+        }
+    }
+
     private var _path: Path!
 
     public init<Cache: CacheEngine>(name: String, cache: Cache, deploymentTarget: [String: String], binaries: [BinaryDependency]? = nil, packages: [PackageDependency]? = nil, pods: [CocoaPodDependency]? = nil) {

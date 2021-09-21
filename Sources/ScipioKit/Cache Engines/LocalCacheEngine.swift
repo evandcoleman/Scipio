@@ -3,16 +3,21 @@ import Foundation
 import PathKit
 
 public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
-    public let path: String
+    private let path: String
+
+    public var normalizedPath: Path {
+        if path.hasPrefix("/") {
+            return Path(path)
+        } else {
+            return (Config.current.directory + Path(path))
+                .normalize()
+        }
+    }
 
     public var requiresCompression: Bool { false }
 
     public enum LocalCacheEngineError: Error {
         case fileNotFound
-    }
-
-    public init(path: Path) {
-        self.path = path.string
     }
 
     public func downloadUrl(for product: String, version: String) -> URL {
@@ -71,6 +76,6 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
     }
 
     private func localPath(for product: String, version: String) -> Path {
-        return Path(path).normalize() + product + "\(product)-\(version).xcframework"
+        return normalizedPath + product + "\(product)-\(version).xcframework"
     }
 }

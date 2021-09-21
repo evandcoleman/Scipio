@@ -109,8 +109,10 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
 
         return cache.put(artifact: artifact)
             .tryMap { cachedArtifact in
-                try self.versionCachePath(for: artifact.name, version: artifact.version)
-                    .write(artifact.path.checksum(.sha256))
+                if artifact.path.isFile {
+                    try self.versionCachePath(for: artifact.name, version: artifact.version)
+                        .write(artifact.path.checksum(.sha256))
+                }
 
                 return cachedArtifact
             }
@@ -138,7 +140,7 @@ extension CacheEngineDelegator {
                                     .flatMap { self.put(artifact: AnyArtifact($0)) }
                                     .eraseToAnyPublisher()
                             } else {
-                                return self.put(artifact: AnyArtifact(artifact))
+                                return self.put(artifact: artifact)
                             }
                         } else {
                             return Just(CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact)))
