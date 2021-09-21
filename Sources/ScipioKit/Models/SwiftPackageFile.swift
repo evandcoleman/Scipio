@@ -11,12 +11,6 @@ public struct SwiftPackageFile {
     public var artifacts: [CachedArtifact]
     public var removeMissing: Bool
 
-    public var needsWrite: Bool {
-        let existing: String? = try? path.read()
-
-        return existing != asString()
-    }
-
     public init(name: String, path: Path, platforms: [Platform: String], artifacts: [CachedArtifact], removeMissing: Bool) throws {
         self.name = name
         self.path = path.lastComponent == "Package.swift" ? path : path + "Package.swift"
@@ -25,6 +19,12 @@ public struct SwiftPackageFile {
         self.removeMissing = removeMissing
 
         try read()
+    }
+
+    public func needsWrite(relativeTo: Path) -> Bool {
+        let existing: String? = try? path.read()
+
+        return existing != asString(relativeTo: relativeTo)
     }
 
     public mutating func read() throws {
@@ -91,11 +91,11 @@ public struct SwiftPackageFile {
             }
     }
 
-    public func write() throws {
-        try path.write(asString())
+    public func write(relativeTo: Path) throws {
+        try path.write(asString(relativeTo: relativeTo))
     }
 
-    func asString() -> String {
+    func asString(relativeTo: Path) -> String {
         return """
 // swift-tools-version:5.3
 import PackageDescription
@@ -114,7 +114,7 @@ let package = Package(
     ],
     targets: [
 \(targets
-    .map { $0.asString(indenting: 8.spaces) }
+    .map { $0.asString(indenting: 8.spaces, relativeTo: relativeTo) }
     .joined(separator: ",\n"))
     ]
 )
@@ -160,12 +160,12 @@ extension SwiftPackageFile {
             self.checksum = checksum
         }
 
-        func asString(indenting: String) -> String {
+        func asString(indenting: String, relativeTo: Path) -> String {
             if url.isFileURL {
                 return """
 \(indenting).binaryTarget(
 \(indenting)    name: "\(name)",
-\(indenting)    path: "\(url.path)"
+\(indenting)    path: "\(url.path.replacingOccurrences(of: relativeTo.string, with: "").trimmingCharacters(in: .init(charactersIn: "/")))"
 \(indenting))
 """
             } else {
