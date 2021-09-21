@@ -59,10 +59,10 @@ enum Runner {
             removeMissing: removeMissing
         )
 
-        if packageFile.needsWrite {
+        if packageFile.needsWrite(relativeTo: Config.current.packageRoot) {
             log.info("✍️  Writing \(Config.current.name) package manifest...")
 
-            try packageFile.write()
+            try packageFile.write(relativeTo: Config.current.packageRoot)
         }
     }
 }

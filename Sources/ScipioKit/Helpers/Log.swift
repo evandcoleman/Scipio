@@ -42,7 +42,7 @@ public final class Log: NSObject {
         }
     }
 
-    public var level: Level = .warning
+    public var level: Level = .info
     public var debugLevel: Level = .debug
     public var useColors: Bool = true
 
