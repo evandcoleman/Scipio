@@ -52,7 +52,12 @@ extension HTTPCacheEngineProtocol {
                         promise(.failure(HTTPCacheEngineError.requestFailed(statusCode: statusCode, body: String(data: data ?? Data(), encoding: .utf8) ?? "")))
                     } else {
                         do {
-                            promise(.success(try CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: request.url!, localPath: artifact.path)))
+                            promise(.success(try CachedArtifact(
+                                name: artifact.name,
+                                parentName: artifact.parentName,
+                                url: downloadUrl(for: artifact.name, version: artifact.version),
+                                localPath: artifact.path
+                            )))
                         } catch {
                             promise(.failure(error))
                         }
