@@ -5,10 +5,12 @@ import Zip
 
 public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
     let local: LocalCacheEngine?
+    let s3: S3CacheEngine?
     let http: HTTPCacheEngine?
 
     enum CodingKeys: String, CodingKey {
         case local
+        case s3
         case http
     }
 
@@ -17,6 +19,8 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
             return cache
         } else if let local = local {
             return AnyCacheEngine(local)
+        } else if let s3 = s3 {
+            return AnyCacheEngine(s3)
         } else if let http = http {
             return AnyCacheEngine(http)
         } else {
@@ -29,11 +33,13 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
 
     public static func == (lhs: CacheEngineDelegator, rhs: CacheEngineDelegator) -> Bool {
         return lhs.local == rhs.local
+            && lhs.s3 == rhs.s3
             && lhs.http == rhs.http
     }
 
     public init<T: CacheEngine>(cache: T) {
         self.local = nil
+        self.s3 = nil
         self.http = nil
         self._cache = AnyCacheEngine(cache)
     }

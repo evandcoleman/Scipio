@@ -87,8 +87,22 @@ public struct PackageManifest: Codable, Equatable {
     }
 
     private func getBuildables(in product: Product) -> [SwiftPackageBuildable] {
-        return recursiveTargets(in: product)
-            .map { $0.type == .binary ? .binaryTarget($0) : .target($0.name) }
+        let targets = recursiveTargets(in: product)
+
+        return targets
+            .compactMap { target -> SwiftPackageBuildable? in
+                let dependencies = target.dependencies.flatMap(\.names)
+
+                if target.type == .binary {
+                    return .binaryTarget(target)
+                } else if dependencies.count == 1,
+                          targets.first(where: { $0.name == dependencies[0] })?.type == .binary {
+
+                    return nil
+                } else {
+                    return .target(target.name)
+                }
+            }
     }
 
     private func recursiveTargets(in product: Product) -> [PackageManifest.Target] {

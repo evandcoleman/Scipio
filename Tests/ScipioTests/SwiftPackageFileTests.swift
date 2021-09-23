@@ -28,7 +28,7 @@ final class SwiftPackageFileTests: XCTestCase {
             ],
             removeMissing: true
         )
-        let result = file.asString()
+        let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
 // swift-tools-version:5.3
 import PackageDescription
@@ -114,14 +114,14 @@ let package = Package(
             removeMissing: true
         )
 
-        XCTAssertEqual(existingFile, file.asString())
+        XCTAssertEqual(existingFile, file.asString(relativeTo: path.parent()))
 
         try artifact.localPath!.write("new file contents")
         artifact = try CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: artifact.url, localPath: artifact.localPath!)
         file.artifacts[0] = artifact
         try file.read()
 
-        let result = file.asString()
+        let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
 // swift-tools-version:5.3
 import PackageDescription
@@ -203,7 +203,7 @@ let package = Package(
             ],
             removeMissing: false
         )
-        let result = file.asString()
+        let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
 // swift-tools-version:5.3
 import PackageDescription
@@ -279,7 +279,7 @@ let package = Package(
             ],
             removeMissing: false
         )
-        let result = file.asString()
+        let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
 // swift-tools-version:5.3
 import PackageDescription
@@ -357,7 +357,7 @@ let package = Package(
             ],
             removeMissing: true
         )
-        let result = file.asString()
+        let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
 // swift-tools-version:5.3
 import PackageDescription

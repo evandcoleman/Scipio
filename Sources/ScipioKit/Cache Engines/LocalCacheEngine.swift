@@ -20,6 +20,10 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
         case fileNotFound
     }
 
+    public init(path: Path) {
+        self.path = path.string
+    }
+
     public func downloadUrl(for product: String, version: String) -> URL {
         return localPath(for: product, version: version).url
     }
