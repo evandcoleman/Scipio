@@ -41,6 +41,27 @@ final class SwiftPackageDescriptorTests: XCTestCase {
         XCTAssertEqual(package.getBuildables(), [.target("JWT"), .target("JWA")])
     }
 
+    func testComputeProductNamesWithSingleBinaryTargetDependency() throws {
+        let packageText = """
+        // swift-tools-version:5.3
+        import PackageDescription
+        let package = Package(
+          name: "JWT",
+          products: [
+            .library(name: "JWT", targets: ["JWT"]),
+          ],
+          targets: [
+            .binaryTarget(name: "JWT", path: "JWT.xcframework"),
+          ]
+        )
+        """
+        try path.write(packageText)
+        let package = try PackageManifest.load(from: path.parent())
+
+        XCTAssertEqual(package.name, "JWT")
+        XCTAssertEqual(package.getBuildables(), [.binaryTarget(.init(dependencies: [], name: "JWT", path: "JWT.xcframework", publicHeadersPath: nil, type: .binary, checksum: nil, url: nil, settings: []))])
+    }
+
     func testComputeProductNamesWithBinaryTargetDependency() throws {
         let packageText = """
         // swift-tools-version:5.3

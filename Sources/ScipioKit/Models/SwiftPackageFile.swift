@@ -51,7 +51,7 @@ public struct SwiftPackageFile {
             .sorted { $0.name < $1.name }
 
         products = sortedArtifacts
-            .map { Product(name: $0.name, type: .dynamic, targets: [$0.name]) }
+            .map { Product(name: $0.name, targets: [$0.name]) }
 
         targets = try sortedArtifacts
             .map { name, artifact, target in
@@ -123,14 +123,8 @@ let package = Package(
 }
 
 extension SwiftPackageFile {
-    public enum ProductType: String {
-        case dynamic
-        case `static`
-    }
-
     public struct Product {
         public var name: String
-        public var type: ProductType
         public var targets: [String]
 
         func asString(indenting: String) -> String {
@@ -138,7 +132,7 @@ extension SwiftPackageFile {
                 .map { "\"\($0)\"" }
                 .joined(separator: ", ")
 
-            return #"\#(indenting).library(name: "\#(name)", type: .\#(type.rawValue), targets: [\#(targetsString)])"#
+            return #"\#(indenting).library(name: "\#(name)", targets: [\#(targetsString)])"#
         }
     }
 
