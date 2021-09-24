@@ -64,6 +64,10 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
         return Just(cachePath)
             .tryMap { cachePath -> Artifact in
                 if cachePath.exists {
+                    if destination.exists {
+                        try destination.delete()
+                    }
+
                     try cachePath.copy(destination)
 
                     return Artifact(

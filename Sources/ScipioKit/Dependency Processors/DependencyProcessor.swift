@@ -24,6 +24,36 @@ public protocol DependencyProducts {
 }
 
 extension DependencyProcessor {
+    public func existingArtifacts(dependencies onlyDependencies: [Input]? = nil) -> AnyPublisher<[AnyArtifact], Error> {
+        let dependencies = onlyDependencies ?? self.dependencies
+
+        return preProcess()
+            .map { resolvedDependencies -> [AnyArtifact] in
+                return resolvedDependencies
+                    .filter { resolved in dependencies.contains(where: { $0.name == resolved.name }) }
+                    .flatMap { dependency -> [AnyArtifact] in
+                        return (dependency
+                            .productNames ?? [])
+                            .compactMap { productName in
+                                let path = Config.current.buildPath + "\(productName).xcframework.zip"
+
+                                guard path.exists else {
+                                    log.warning("Skipping \(path.lastComponent) because it doesn't exist.")
+                                    return nil
+                                }
+
+                                return AnyArtifact(Artifact(
+                                    name: productName,
+                                    parentName: dependency.name,
+                                    version: dependency.version(for: productName),
+                                    path: path
+                                ))
+                            }
+                    }
+            }
+            .eraseToAnyPublisher()
+    }
+
     public func process(dependencies onlyDependencies: [Input]? = nil, accumulatedResolvedDependencies: [DependencyProducts]) -> AnyPublisher<([AnyArtifact], [DependencyProducts]), Error> {
         return preProcess()
             .tryFlatMap { dependencyProducts -> AnyPublisher<([AnyArtifact], [DependencyProducts]), Error> in

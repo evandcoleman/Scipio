@@ -47,4 +47,16 @@ public struct S3CacheEngine: HTTPCacheEngineProtocol, Decodable, Equatable {
         case path
         case cdnUrl
     }
+
+    public func uploadUrlRequest(url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+
+        request.httpMethod = "PUT"
+        request.allHTTPHeaderFields = [
+            "Content-Type": "application/zip",
+            "x-amz-acl": "bucket-owner-full-control",
+        ]
+
+        return request
+    }
 }
