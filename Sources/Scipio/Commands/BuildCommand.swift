@@ -11,7 +11,7 @@ extension Command {
             )
         }
 
-        @OptionGroup var options: Main.Options
+        @OptionGroup var options: Run.Options
         @OptionGroup var buildOptions: Options
 
         func run() throws {

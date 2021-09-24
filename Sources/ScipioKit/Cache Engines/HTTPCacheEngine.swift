@@ -6,6 +6,8 @@ public protocol HTTPCacheEngineProtocol: CacheEngine {
     var uploadBaseUrl: URL { get }
     var downloadBaseUrl: URL { get }
     var urlSession: URLSession { get }
+
+    func uploadUrlRequest(url: URL) -> URLRequest
 }
 
 public enum HTTPCacheEngineError: Error {
@@ -25,6 +27,17 @@ extension HTTPCacheEngineProtocol {
         return url(for: product, version: version, baseUrl: downloadBaseUrl)
     }
 
+    public func uploadUrlRequest(url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+
+        request.httpMethod = "PUT"
+        request.allHTTPHeaderFields = [
+            "Content-Type": "application/zip"
+        ]
+
+        return request
+    }
+
     public func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
         var request = URLRequest(url: downloadUrl(for: product, version: version))
         request.httpMethod = "HEAD"
@@ -38,11 +51,7 @@ extension HTTPCacheEngineProtocol {
 
     public func put(artifact: CompressedArtifact) -> AnyPublisher<CachedArtifact, Error> {
         return Future { promise in
-            var request = URLRequest(url: uploadUrl(for: artifact.name, version: artifact.version))
-            request.httpMethod = "PUT"
-            request.allHTTPHeaderFields = [
-                "Content-Type": "application/zip"
-            ]
+            let request = uploadUrlRequest(url: uploadUrl(for: artifact.name, version: artifact.version))
 
             let task = urlSession
                 .uploadTask(with: request, fromFile: artifact.path.url, progressHandler: { log.progress(percent: $0) }) { data, response, error in

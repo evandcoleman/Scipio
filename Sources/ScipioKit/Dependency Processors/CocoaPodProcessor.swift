@@ -211,6 +211,16 @@ project '\(projectPath.string)'
                 notIn: projectProducts
             )
 
+            if filteredProductNames.contains(dependency.name) {
+                for target in project.pbxproj.targets(named: dependency.name) {
+                    for config in target.buildConfigurationList?.buildConfigurations ?? [] {
+                        config.buildSettings["PRODUCT_NAME"] = "\(dependency.name)Package"
+                    }
+                }
+
+                try project.write(path: podsProjectPath)
+            }
+
             return CocoaPodDescriptor(
                 name: dependency.name,
                 resolvedVersions: versions,
