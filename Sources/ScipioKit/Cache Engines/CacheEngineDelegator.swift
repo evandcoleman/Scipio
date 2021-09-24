@@ -99,8 +99,10 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
                 return self.cache
                     .get(product: product, in: parentName, version: version, destination: normalizedDestination)
                     .tryMap { artifact in
-                        try self.versionCachePath(for: artifact.name, version: artifact.version)
-                            .write(artifact.path.checksum(.sha256))
+                        if artifact.path.exists, artifact.path.isFile {
+                            try self.versionCachePath(for: artifact.name, version: artifact.version)
+                                .write(artifact.path.checksum(.sha256))
+                        }
 
                         return artifact
                     }
