@@ -100,8 +100,8 @@ public struct Xcodebuild {
         if let clonedSourcePackageDirectory = clonedSourcePackageDirectory {
             args.append(contentsOf: ["-clonedSourcePackagesDirPath", clonedSourcePackageDirectory])
         }
-        if let sdk = sdk {
-            args.append(contentsOf: ["-sdk", sdk.rawValue])
+        if let destination = sdk?.destination {
+            args.append(contentsOf: ["-destination", destination])
         }
         if useSystemSourceControlManagement, command != .createXCFramework {
             args.append(contentsOf: ["-scmProvider", "system"])
@@ -128,5 +128,16 @@ public extension Xcodebuild {
         case iphoneos
         case iphonesimulator
         case macos
+
+        var destination: String {
+            switch self {
+            case .iphoneos:
+                return "generic/platform=iOS"
+            case .iphonesimulator:
+                return "generic/platform=iOS Simulator"
+            case .macos:
+                return "generic/platform=macOS"
+            }
+        }
     }
 }

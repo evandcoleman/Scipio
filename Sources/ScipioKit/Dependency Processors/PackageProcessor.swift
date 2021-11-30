@@ -557,7 +557,7 @@ extension WorkspaceState {
             let identity: String
             let kind: Kind
             let name: String
-            let path: String
+            let path: String?
         }
 
         enum Kind: String, Codable {
