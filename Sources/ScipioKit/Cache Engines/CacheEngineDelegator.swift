@@ -139,7 +139,7 @@ extension CacheEngineDelegator {
             .setFailureType(to: Error.self)
             .flatMap(maxPublishers: .max(1)) { artifact -> AnyPublisher<CachedArtifact, Error> in
                 return self.exists(artifact: artifact)
-                    .flatMap { exists -> AnyPublisher<CachedArtifact, Error> in
+                    .tryFlatMap { exists -> AnyPublisher<CachedArtifact, Error> in
                         if !exists || force {
                             log.info("☁️ Uploading \(artifact.name)...")
 
@@ -151,9 +151,15 @@ extension CacheEngineDelegator {
                                 return self.put(artifact: artifact)
                             }
                         } else {
-                            return Just(CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact)))
-                                .setFailureType(to: Error.self)
-                                .eraseToAnyPublisher()
+                            if let compressed = artifact.base as? CompressedArtifact {
+                                return Just(try CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact), localPath: compressed.path))
+                                    .setFailureType(to: Error.self)
+                                    .eraseToAnyPublisher()
+                            } else {
+                                return Just(CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact)))
+                                    .setFailureType(to: Error.self)
+                                    .eraseToAnyPublisher()
+                            }
                         }
                     }
                     .eraseToAnyPublisher()
