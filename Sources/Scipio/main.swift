@@ -10,7 +10,7 @@ extension Command {
       .init(
         commandName: "Scipio",
         abstract: "A program to pre-build and cache Swift packages",
-        version: "0.2.4",
+        version: "0.2.5",
         subcommands: [
             Command.Run.self,
             Command.Build.self,
