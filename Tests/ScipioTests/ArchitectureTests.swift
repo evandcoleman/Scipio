@@ -2,12 +2,12 @@
 import XCTest
 
 final class ArchitectureTests: XCTestCase {
-    func sdkArchitectures() throws {
+    func testSdkArchitectures() throws {
         let architectures = Architecture.allCases
 
         XCTAssertEqual(architectures.sdkArchitectures, [
-            .iphoneos: [.arm64, .armv7],
-            .iphonesimulator: [.i386, .x86_64],
+            .iphonesimulator: [.x86_64, .arm64],
+            .iphoneos: [.armv7, .arm64],
         ])
     }
 }

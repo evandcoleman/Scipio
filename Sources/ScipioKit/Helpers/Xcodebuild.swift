@@ -124,7 +124,7 @@ public extension Xcodebuild {
         case createXCFramework
     }
 
-    enum SDK: String {
+    enum SDK: String, CaseIterable {
         case iphoneos
         case iphonesimulator
         case macos
