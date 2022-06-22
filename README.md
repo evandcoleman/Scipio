@@ -4,6 +4,8 @@
 
 `Scipio` is a tool that takes existing Swift packages, binary frameworks, or CocoaPods, compiles them into XCFrameworks and delivers them as a single Swift package.
 
+🔨 **Scipio is currrently in alpha. Some things may not work right. If you run into problems, please open an issue.**
+
 **_The Problem_**: Each dependency manager has its own drawbacks and advantages. `CocoaPods` is incredibly easy to setup, but requires you to compile each dependency from source. This can add a significant amount of time to your builds if you have a lot of dependencies. `Carthage` solves this problem, but not every library supports it and it adds several steps to your build pipeline.
 
 `Scipio` aims to solve these problems by leveraging the Swift package manager support built into Xcode 11+ along with SPM's ability to distribute binary frameworks.
