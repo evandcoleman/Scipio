@@ -97,7 +97,7 @@ public struct SwiftPackageFile {
 
     func asString(relativeTo: Path) -> String {
         return """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(

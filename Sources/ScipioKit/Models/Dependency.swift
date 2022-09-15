@@ -60,6 +60,7 @@ public struct PackageDependency: Dependency {
     public let revision: String?
     public let branch: String?
     public let exactVersion: String?
+    public let version: String?
     public let additionalBuildSettings: [String: String]?
 
     public var versionRequirement: SwiftPackage.VersionRequirement {
@@ -69,7 +70,7 @@ public struct PackageDependency: Dependency {
             return .revision(revision)
         } else if let branch = branch {
             return .branch(branch)
-        } else if let exactVersion = exactVersion {
+        } else if let exactVersion = exactVersion ?? version {
             return .exact(exactVersion)
         } else {
             fatalError("Unsupported package version requirement")

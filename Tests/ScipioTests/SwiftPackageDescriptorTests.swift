@@ -16,7 +16,7 @@ final class SwiftPackageDescriptorTests: XCTestCase {
 
     func testComputeBuildablesWithTargetDependency() throws {
         let packageText = """
-        // swift-tools-version:5.3
+        // swift-tools-version: 5.6
         import PackageDescription
         let package = Package(
           name: "JWT",
@@ -43,7 +43,7 @@ final class SwiftPackageDescriptorTests: XCTestCase {
 
     func testComputeProductNamesWithSingleBinaryTargetDependency() throws {
         let packageText = """
-        // swift-tools-version:5.3
+        // swift-tools-version: 5.6
         import PackageDescription
         let package = Package(
           name: "JWT",
@@ -64,7 +64,7 @@ final class SwiftPackageDescriptorTests: XCTestCase {
 
     func testComputeProductNamesWithBinaryTargetDependency() throws {
         let packageText = """
-        // swift-tools-version:5.3
+        // swift-tools-version: 5.6
         import PackageDescription
         let package = Package(
           name: "JWT",

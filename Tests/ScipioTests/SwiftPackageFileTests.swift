@@ -30,7 +30,7 @@ final class SwiftPackageFileTests: XCTestCase {
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -70,7 +70,7 @@ let package = Package(
         var artifact: CachedArtifact = try .mock(name: "Product1", parentName: "Package1")
 
         let existingFile = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -123,7 +123,7 @@ let package = Package(
 
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -161,7 +161,7 @@ let package = Package(
 
     func testUpdateExistingFileWithOnlyOneArtifact() throws {
         let existingFile = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -205,7 +205,7 @@ let package = Package(
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -243,7 +243,7 @@ let package = Package(
 
     func testOnlyAddNewArtifact() throws {
         let existingFile = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -281,7 +281,7 @@ let package = Package(
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -319,7 +319,7 @@ let package = Package(
 
     func testAddNewArtifact() throws {
         let existingFile = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(
@@ -359,7 +359,7 @@ let package = Package(
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
-// swift-tools-version:5.3
+// swift-tools-version: 5.6
 import PackageDescription
 
 let package = Package(

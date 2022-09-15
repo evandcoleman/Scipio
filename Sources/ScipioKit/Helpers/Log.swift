@@ -52,35 +52,35 @@ public final class Log: NSObject {
         return formatter
     }()
 
-    public func debug(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func debug(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .debug, file: file, line: line, column: column, message)
     }
 
-    public func verbose(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func verbose(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .verbose, file: file, line: line, column: column, message)
     }
 
-    public func info(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func info(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .info, file: file, line: line, column: column, message)
     }
 
-    public func success(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func success(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .success, file: file, line: line, column: column, message)
     }
 
-    public func warning(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func warning(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .warning, file: file, line: line, column: column, message)
     }
 
-    public func error(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func error(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .error, file: file, line: line, column: column, message)
     }
 
-    public func passthrough(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) {
+    public func passthrough(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) {
         self.log(level: .passthrough, file: file, line: line, column: column, message)
     }
 
-    public func progress(file: String = #file, line: Int = #line, column: Int = #column, percent: Double) {
+    public func progress(file: StaticString = #file, line: UInt = #line, column: Int = #column, percent: Double) {
         let width: Int = 40
         let message = "[" + stride(from: 0, to: width, by: 1)
             .map { Double($0) / Double(width) > min(percent, 1) ? "-" : "=" }
@@ -93,7 +93,7 @@ public final class Log: NSObject {
         }
     }
 
-    public func fatal(file: String = #file, line: Int = #line, column: Int = #column, _ message: Any...) -> Never {
+    public func fatal(file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: Any...) -> Never {
         self.log(level: .error, file: file, line: line, column: column, message)
         exit(EXIT_FAILURE)
     }
@@ -106,14 +106,14 @@ public final class Log: NSObject {
         #endif
     }
 
-    private func log(level: Level, terminator: String = "\n", file: String = #file, line: Int = #line, column: Int = #column, _ message: [Any]) {
+    private func log(level: Level, terminator: String = "\n", file: StaticString = #file, line: UInt = #line, column: Int = #column, _ message: [Any]) {
         if isDebug {
             guard level.levelValue >= debugLevel.levelValue else { return }
         } else {
             guard level.levelValue >= self.level.levelValue else { return }
         }
 
-        let filename = URL(fileURLWithPath: file).lastPathComponent
+        let filename = URL(fileURLWithPath: "\(file)").lastPathComponent
         let formattedMessage = message.map { String(describing: $0) } .joined(separator: " ")
         let dateText = Log.dateFormatter.string(from: Date())
         let debugMessage = "[\(dateText)]: [\(filename):\(line):\(column)] | \(formattedMessage)"

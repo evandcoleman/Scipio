@@ -1,0 +1,52 @@
+name: Test
+
+deploymentTarget:
+  iOS: "14.0"
+
+cache:
+  local:
+    path: ./
+
+packages:
+  - name: Pushwoosh
+    url: https://github.com/Pushwoosh/Pushwoosh-XCFramework
+    from: 6.0.0
+  - name: Firebase
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 9.0.0
+  - name: Amplitude
+    url: https://github.com/amplitude/Amplitude-iOS
+    from: 8.0.0
+  - name: Kingfisher
+    url: https://github.com/onevcat/Kingfisher
+    from: 7.0.0
+  - name: CombineCocoa
+    url: https://github.com/CombineCommunity/CombineCocoa
+    from: 0.4.0
+  - name: CombineExt
+    url: https://github.com/CombineCommunity/CombineExt
+    from: 1.0.0
+  - name: Factory
+    url: https://github.com/hmlongco/Factory
+    from: 1.0.0
+  - name: Lottie
+    url: https://github.com/airbnb/lottie-ios.git
+    from: 3.0.0
+  - name: AutoChangeable
+    url: https://github.com/almazrafi/AutoChangeable
+    from: 1.0.0
+  - name: ResponsiveTextField
+    url: https://github.com/swensonhe/swift-responsive-textfield
+    from: 0.0.0
+  - name: Focuser
+    url: https://github.com/swensonhe/swift-focuser
+    from: 1.0.0
+  - name: PhoneNumberKit
+    url: https://github.com/marmelroy/PhoneNumberKit
+    from: 3.0.0
+  - name: ActivityIndicatorView
+    url: https://github.com/exyte/ActivityIndicatorView
+    from: 0.0.1
+  - name: AWSiOSSDKV2
+    url: https://github.com/aws-amplify/aws-sdk-ios-spm
+    from: 2.0.0

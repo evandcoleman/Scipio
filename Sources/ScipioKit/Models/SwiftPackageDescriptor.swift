@@ -65,7 +65,7 @@ public struct PackageManifest: Codable, Equatable {
             data = try cachedManifestPath.read()
         } else {
             log.verbose("Reading Package.swift for \(path.lastComponent)")
-            data = try sh("/usr/bin/swift", "package", "dump-package", "--package-path", "\(path.string)")
+            data = try xcrun("swift", "package", "dump-package", "--package-path", "\(path.string)")
                 .output()
             try cachedManifestPath.write(data)
         }

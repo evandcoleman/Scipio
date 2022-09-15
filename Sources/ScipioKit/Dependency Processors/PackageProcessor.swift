@@ -539,11 +539,7 @@ extension WorkspaceState {
 
             struct State: Codable {
                 let checkoutState: CheckoutState
-                let name: Name
-
-                enum Name: String, Codable {
-                    case checkout
-                }
+                let name: String?
 
                 struct CheckoutState: Codable {
                     let branch: String?
@@ -555,14 +551,9 @@ extension WorkspaceState {
 
         struct PackageRef: Codable {
             let identity: String
-            let kind: Kind
+            let kind: String?
             let name: String
             let path: String?
-        }
-
-        enum Kind: String, Codable {
-            case local
-            case remote
         }
 
         struct Artifact: Codable {
@@ -572,7 +563,7 @@ extension WorkspaceState {
 
             struct Source: Codable {
                 let path: String?
-                let type: Kind
+                let type: String?
                 let checksum, subpath: String?
                 let url: String?
             }

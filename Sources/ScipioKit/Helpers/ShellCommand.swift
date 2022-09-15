@@ -2,29 +2,29 @@ import Foundation
 import PathKit
 
 @discardableResult
-func sh(_ command: Path, _ arguments: String..., in path: Path? = nil, passEnvironment: Bool = false, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
-    try ShellCommand.sh(command: command.string, arguments: arguments, in: path, passEnvironment: passEnvironment, lineReader: lineReader)
+func sh(_ command: Path, _ arguments: String..., in path: Path? = nil, passEnvironment: Bool = false, file: StaticString = #file, line: UInt = #line, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
+    try ShellCommand.sh(command: command.string, arguments: arguments, in: path, passEnvironment: passEnvironment, file: file, line: line, lineReader: lineReader)
 }
 
 @discardableResult
-func sh(_ command: Path, _ arguments: [String], in path: Path? = nil, passEnvironment: Bool = false, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
-    try ShellCommand.sh(command: command.string, arguments: arguments, in: path, passEnvironment: passEnvironment, lineReader: lineReader)
+func sh(_ command: Path, _ arguments: [String], in path: Path? = nil, passEnvironment: Bool = false, file: StaticString = #file, line: UInt = #line, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
+    try ShellCommand.sh(command: command.string, arguments: arguments, in: path, passEnvironment: passEnvironment, file: file, line: line, lineReader: lineReader)
 }
 
 @discardableResult
-func sh(_ command: String, _ arguments: String..., in path: Path? = nil, passEnvironment: Bool = false, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
-    try ShellCommand.sh(command: command, arguments: arguments, in: path, passEnvironment: passEnvironment, lineReader: lineReader)
+func sh(_ command: String, _ arguments: String..., in path: Path? = nil, passEnvironment: Bool = false, file: StaticString = #file, line: UInt = #line, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
+    try ShellCommand.sh(command: command, arguments: arguments, in: path, passEnvironment: passEnvironment, file: file, line: line, lineReader: lineReader)
 }
 
 @discardableResult
-func sh(_ command: String, _ arguments: [String], in path: Path? = nil, passEnvironment: Bool = false, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
-    try ShellCommand.sh(command: command, arguments: arguments, in: path, passEnvironment: passEnvironment, lineReader: lineReader)
+func sh(_ command: String, _ arguments: [String], in path: Path? = nil, passEnvironment: Bool = false, file: StaticString = #file, line: UInt = #line, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
+    try ShellCommand.sh(command: command, arguments: arguments, in: path, passEnvironment: passEnvironment, file: file, line: line, lineReader: lineReader)
 }
 
 @discardableResult
-func which(_ command: String) throws -> Path {
+func which(_ command: String, file: StaticString = #file, line: UInt = #line) throws -> Path {
     do {
-        let output = try sh("/usr/bin/which", command, passEnvironment: true)
+        let output = try sh("/usr/bin/which", command, passEnvironment: true, file: file, line: line)
             .outputString()
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -48,9 +48,17 @@ public enum ShellError: LocalizedError {
 final class ShellCommand {
 
     @discardableResult
-    static func sh(command: String, arguments: [String], in path: Path? = nil, passEnvironment: Bool = false, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
+    static func sh(
+        command: String,
+        arguments: [String],
+        in path: Path? = nil,
+        passEnvironment: Bool = false,
+        file: StaticString = #file,
+        line: UInt = #line,
+        lineReader: ((String) -> Void)? = nil
+    ) throws -> ShellCommand {
         let shell = ShellCommand(command: command, arguments: arguments)
-        try shell.run(in: path, passEnvironment: passEnvironment, lineReader: lineReader)
+        try shell.run(in: path, passEnvironment: passEnvironment, file: file, line: line, lineReader: lineReader)
         return shell
     }
 
@@ -71,7 +79,13 @@ final class ShellCommand {
         self.arguments = arguments
     }
 
-    func run(in path: Path? = nil, passEnvironment: Bool = false, lineReader: ((String) -> Void)? = nil) throws {
+    func run(
+        in path: Path? = nil,
+        passEnvironment: Bool = false,
+        file: StaticString = #file,
+        line: UInt = #line,
+        lineReader: ((String) -> Void)? = nil
+    ) throws {
 
         defer {
             outputPipe.fileHandleForReading.readabilityHandler = nil
@@ -82,20 +96,20 @@ final class ShellCommand {
         task.standardError = errorPipe
 
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            if let line = String(data: handle.availableData, encoding: .utf8), !line.isEmpty {
-                log.verbose(line)
-                lineReader?(line)
+            if let lineString = String(data: handle.availableData, encoding: .utf8), !lineString.isEmpty {
+                log.verbose(file: file, line: line, lineString)
+                lineReader?(lineString)
                 self?.outputQueue.async {
-                    self?.outputString.append(line)
+                    self?.outputString.append(lineString)
                 }
             }
         }
         errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            if let line = String(data: handle.availableData, encoding: .utf8), !line.isEmpty {
-                log.verbose(line)
-                lineReader?(line)
+            if let lineString = String(data: handle.availableData, encoding: .utf8), !lineString.isEmpty {
+                log.verbose(file: file, line: line, lineString)
+                lineReader?(lineString)
                 self?.outputQueue.async {
-                    self?.errorString.append(line)
+                    self?.errorString.append(lineString)
                 }
             }
         }

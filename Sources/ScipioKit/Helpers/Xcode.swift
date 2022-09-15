@@ -2,6 +2,15 @@ import Combine
 import Foundation
 import PathKit
 
+@discardableResult
+func xcrun(_ command: String, _ arguments: String..., passEnvironment: Bool = false, file: StaticString = #file, line: UInt = #line, lineReader: ((String) -> Void)? = nil) throws -> ShellCommand {
+    let developerDirectory = Path((try sh("/usr/bin/xcode-select", "--print-path").outputString())
+        .trimmingCharacters(in: .whitespacesAndNewlines))
+    let commandPath = developerDirectory + "Toolchains/XcodeDefault.xctoolchain/usr/bin/\(command)"
+
+    return try sh(commandPath, arguments, passEnvironment: passEnvironment, file: file, line: line, lineReader: lineReader)
+}
+
 struct Xcode {
     static func getArchivePath(for scheme: String, sdk: Xcodebuild.SDK) -> Path {
         return Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
