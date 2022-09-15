@@ -55,7 +55,7 @@ public struct PackageManifest: Codable, Equatable {
     public let products: [Product]
     public let targets: [Target]
 
-    public static func load(from path: Path) throws -> PackageManifest {
+    public static func load(from path: Path, retry: Bool = true) throws -> PackageManifest {
         precondition(path.isDirectory)
         
         let cachedManifestPath = Config.current.cachePath + "\(path.lastComponent)-\(try (path + "Package.swift").checksum(.sha256)).json"
@@ -76,8 +76,12 @@ public struct PackageManifest: Codable, Equatable {
         } catch {
             try cachedManifestPath.delete()
 
-            return try load(from: path)
+            if !retry {
+                throw error
+            }
         }
+
+        return try load(from: path, retry: false)
     }
 
     public func getBuildables() -> [SwiftPackageBuildable] {
