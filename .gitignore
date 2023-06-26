@@ -131,3 +131,4 @@ Temporary Items
 
 *.xcodeproj
 .swiftpm
+.scipio

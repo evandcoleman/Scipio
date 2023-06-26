@@ -53,7 +53,7 @@ public struct Xcodebuild {
 
         let arguments = getArguments()
         log.verbose((["xcodebuild"] + arguments).joined(separator: " "))
-        try sh("/usr/bin/xcodebuild", arguments) { line in
+        try xcrun("xcodebuild", arguments) { line in
             if log.level.levelValue <= Log.Level.verbose.levelValue {
                 log.verbose(line)
             } else {

@@ -8,15 +8,15 @@ cache:
     path: ./
 
 packages:
-  - name: Pushwoosh
-    url: https://github.com/Pushwoosh/Pushwoosh-XCFramework
-    from: 6.0.0
+  # - name: Pushwoosh
+  #   url: https://github.com/Pushwoosh/Pushwoosh-XCFramework
+  #   from: 6.0.0
   - name: Firebase
     url: https://github.com/firebase/firebase-ios-sdk
     from: 9.0.0
-  - name: Amplitude
-    url: https://github.com/amplitude/Amplitude-iOS
-    from: 8.0.0
+  # - name: Amplitude
+  #   url: https://github.com/amplitude/Amplitude-iOS
+  #   from: 8.0.0
   - name: Kingfisher
     url: https://github.com/onevcat/Kingfisher
     from: 7.0.0
@@ -50,3 +50,6 @@ packages:
   - name: AWSiOSSDKV2
     url: https://github.com/aws-amplify/aws-sdk-ios-spm
     from: 2.0.0
+  - name: Alamofire
+    url: https://github.com/Alamofire/Alamofire
+    from: 5.6.4

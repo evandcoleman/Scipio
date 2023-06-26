@@ -149,8 +149,8 @@ extension PackageManifest {
         public let settings: [Setting]?
 
         public struct Setting: Codable, Equatable, Hashable {
-            public let name: Name
-            public let value: [String]
+            public let name: Name?
+            public let value: [String]?
 
             public enum Name: String, Codable, Equatable {
                 case define
@@ -216,9 +216,11 @@ extension PackageManifest {
     }
 
     public enum TargetType: String, Codable {
-        case binary = "binary"
-        case regular = "regular"
-        case test = "test"
+        case binary
+        case regular
+        case test
+        case executable
+        case plugin
     }
 }
 
