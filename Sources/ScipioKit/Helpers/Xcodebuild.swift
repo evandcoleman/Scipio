@@ -72,7 +72,7 @@ public struct Xcodebuild {
 
         switch command {
         case .archive:
-            args.append("archive")
+            args.append(contentsOf: ["-configuration", "Release"])
         case .resolvePackageDependencies:
             args.append("-resolvePackageDependencies")
         case .createXCFramework:
@@ -112,6 +112,10 @@ public struct Xcodebuild {
 
         args.append(contentsOf: additionalArguments)
         args.append(contentsOf: additionalBuildSettings.map { "\($0)=\($1)" })
+
+        if command == .archive {
+            args.append("archive")
+        }
 
         return args
     }

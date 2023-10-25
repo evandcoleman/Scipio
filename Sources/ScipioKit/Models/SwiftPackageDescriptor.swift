@@ -58,7 +58,7 @@ public struct PackageManifest: Codable, Equatable {
     public static func load(from path: Path, retry: Bool = true) throws -> PackageManifest {
         precondition(path.isDirectory)
         
-        let cachedManifestPath = Config.current.cachePath + "\(path.lastComponent)-\(try (path + "Package.swift").checksum(.sha256)).json"
+        let cachedManifestPath = Config.current.buildPath + "\(path.lastComponent)-\(try (path + "Package.swift").checksum(.sha256)).json"
         let data: Data
         if cachedManifestPath.exists {
             log.verbose("Loading cached Package.swift for \(path.lastComponent)")
@@ -86,6 +86,7 @@ public struct PackageManifest: Codable, Equatable {
 
     public func getBuildables() -> [SwiftPackageBuildable] {
         return products
+            .filter { $0.type.library != nil }
             .flatMap { getBuildables(in: $0) }
             .uniqued()
     }
@@ -136,6 +137,11 @@ extension PackageManifest {
     public struct Product: Codable, Equatable, Hashable {
         public let name: String
         public let targets: [String]
+        public let type: TypeClass
+
+        public struct TypeClass: Codable, Equatable, Hashable {
+            public let library: [String]?
+        }
     }
 
     public struct Target: Codable, Equatable, Hashable {
@@ -225,12 +231,21 @@ extension PackageManifest {
 }
 
 public enum SwiftPackageBuildable: Equatable, Hashable {
-    case target(String)
+    case target(String, buildName: String? = nil)
     case binaryTarget(PackageManifest.Target)
+
+    public var buildName: String {
+        switch self {
+        case .target(let name, let buildName):
+            return buildName ?? name
+        case .binaryTarget:
+            return name
+        }
+    }
 
     public var name: String {
         switch self {
-        case .target(let name):
+        case .target(let name, _):
             return name
         case .binaryTarget(let target):
             if let urlString = target.url, let url = URL(string: urlString) {

@@ -27,8 +27,8 @@ public final class BinaryProcessor: DependencyProcessor {
         return Just(dependency)
             .setFailureType(to: Error.self)
             .tryFlatMap { dependency -> AnyPublisher<(BinaryDependency, Path), Error> in
-                let downloadPath = Config.current.cachePath + resolvedDependency.url.lastPathComponent
-                let checksumCache = Config.current.cachePath + ".binary-\(resolvedDependency.name)-\(resolvedDependency.version)"
+                let downloadPath = Config.current.buildPath + resolvedDependency.url.lastPathComponent
+                let checksumCache = Config.current.buildPath + ".binary-\(resolvedDependency.name)-\(resolvedDependency.version)"
 
                 if downloadPath.exists, checksumCache.exists,
                    try downloadPath.checksum(.sha256) == (try checksumCache.read()) {
@@ -160,8 +160,8 @@ public final class BinaryProcessor: DependencyProcessor {
 
     private func download(dependency: BinaryDependency) -> AnyPublisher<Path, Error> {
         let url = dependency.url
-        let targetPath = Config.current.cachePath + Path(url.path).lastComponentWithoutExtension
-        let targetRawPath = Config.current.cachePath + url.lastPathComponent
+        let targetPath = Config.current.buildPath + Path(url.path).lastComponentWithoutExtension
+        let targetRawPath = Config.current.buildPath + url.lastPathComponent
 
         return Future<URL, Error> { promise in
             let task = self.urlSession
@@ -203,7 +203,7 @@ public final class BinaryProcessor: DependencyProcessor {
             log.fatal("Unsupported package url extension \"\(dependency.url.pathExtension)\"")
         }
 
-        let targetPath = Config.current.cachePath + compression.decompressedName(url: dependency.url)
+        let targetPath = Config.current.buildPath + compression.decompressedName(url: dependency.url)
 
         if options.skipClean, targetPath.exists {
             return targetPath

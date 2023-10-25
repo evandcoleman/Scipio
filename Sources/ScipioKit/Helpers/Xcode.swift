@@ -21,12 +21,16 @@ struct Xcode {
         return Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
     }
 
-    static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path, sourcePackagesPath: Path? = nil, additionalBuildSettings: [String: String]?) throws -> Path {
+    static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path? = nil, sourcePackagesPath: Path? = nil, additionalBuildSettings: [String: String]?) throws -> Path {
 
         var buildSettings: [String: String] = [
             "BUILD_LIBRARY_FOR_DISTRIBUTION": "YES",
+            "DEBUG_INFORMATION_FORMAT": "dwarf-with-dsym",
+            "ENABLE_TESTABILITY": "YES",
+            "INSTALL_PATH": "/Library/Frameworks",
+            "OTHER_SWIFT_FLAGS": "-no-verify-emitted-module-interface",
             "SKIP_INSTALL": "NO",
-            "INSTALL_PATH": "/Library/Frameworks"
+            "SWIFT_COMPILATION_MODE": "wholemodule",
         ]
 
         if let additionalBuildSettings = additionalBuildSettings {
@@ -43,7 +47,7 @@ struct Xcode {
             project: path.extension == "xcodeproj" ? path.string : nil,
             scheme: scheme,
             archivePath: archivePath.string,
-            derivedDataPath: derivedDataPath.string,
+            derivedDataPath: derivedDataPath?.string,
             clonedSourcePackageDirectory: sourcePackagesPath?.string,
             sdk: sdk,
             additionalBuildSettings: buildSettings
@@ -67,8 +71,6 @@ struct Xcode {
 
         return try frameworkPaths.compactMap { frameworkPath in
             let productName = frameworkPath.lastComponentWithoutExtension
-            let frameworks = archivePaths
-                .map { $0 + "Products/Library/Frameworks/\(productName).framework" }
             let output = buildDirectory + "\(productName).xcframework"
 
             if skipIfExists, output.exists {
@@ -81,16 +83,82 @@ struct Xcode {
                 try output.delete()
             }
 
+            let inputs = try archivePaths
+                .map { try CreateXCFrameworkInput(productName: productName, archivePath: $0) }
             let command = Xcodebuild(
                 command: .createXCFramework,
-                additionalArguments: frameworks
-                    .flatMap { ["-framework", $0.string] } + ["-output", output.string]
+                additionalArguments: try inputs.flatMap { try $0.arguments } + ["-output", output.string]
             )
             try buildDirectory.chdir {
                 try command.run()
             }
 
             return output
+        }
+    }
+
+    struct CreateXCFrameworkInput {
+        let productName: String
+        let archivePath: Path
+
+        var arguments: [String] {
+            get throws {
+                var args: [String] = [
+                    "-framework",
+                    frameworkPath.string,
+                ]
+
+                for path in try debugSymbolFiles {
+                    args.append(contentsOf: ["-debug-symbols", path.string])
+                }
+
+                return args
+            }
+        }
+
+        init(productName: String, archivePath: Path) throws {
+            self.productName = productName
+            self.archivePath = archivePath
+        }
+
+        private var frameworkPath: Path {
+            return archivePath + "Products/Library/Frameworks/\(productName).framework"
+        }
+
+        private var debugSymbolFiles: [Path] {
+            get throws {
+                let dsymPath = archivePath + "dSYMs/\(productName).framework.dSYM"
+
+                guard dsymPath.exists else {
+                    return []
+                }
+
+                let dwarfPath = dsymPath + "Contents/Resources/DWARF/\(productName)"
+
+                guard dwarfPath.exists else {
+                    return [dsymPath]
+                }
+
+                let symbolMaps = try readUUIDs(dwarfPath: dwarfPath)
+                    .map { archivePath + "dSYMs/\($0.uuidString.uppercased()).bcsymbolmap" }
+                    .filter { $0.exists }
+
+                return [dsymPath, dwarfPath] + symbolMaps
+            }
+        }
+
+        private func readUUIDs(dwarfPath: Path) throws -> [UUID] {
+            let command = try xcrun("dwarfdump", ["--uuid", dwarfPath.string])
+            let output = try command.outputString()
+            let regex = try NSRegularExpression(pattern: #"^UUID: ([a-zA-Z0-9\-]+)"#, options: .anchorsMatchLines)
+            let matches = regex.matches(in: output, options: [], range: NSRange(location: 0, length: output.count))
+
+            return matches
+                .compactMap { match in
+                    guard let range = Range(match.range(at: 1), in: output) else { return nil }
+
+                    return UUID(uuidString: String(output[range]))
+                }
         }
     }
 }

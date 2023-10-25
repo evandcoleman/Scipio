@@ -13,11 +13,11 @@ public final class PackageProcessor: DependencyProcessor {
     public let options: ProcessorOptions
 
     private var derivedDataPath: Path {
-        return Config.current.cachePath + "DerivedData" + Config.current.name
+        return Config.current.buildPath + "DerivedData"
     }
 
     private var sourcePackagesPath: Path {
-        return Config.current.cachePath + "SourcePackages" + Config.current.name
+        return Config.current.buildPath + "SourcePackages"
     }
 
     private let urlSession: URLSession = .createWithExtensionsSupport()
@@ -47,10 +47,29 @@ public final class PackageProcessor: DependencyProcessor {
 
             var xcFrameworks: [Artifact] = []
             var downloads: [AnyPublisher<AnyArtifact, Error>] = []
+            var buildables = resolvedDependency.buildables
 
-            for product in resolvedDependency.buildables {
+            let path = try self.setupWorkingPath(for: resolvedDependency)
+
+            try self.preBuild(path: path)
+
+            let availableSchemes = try path.chdir {
+                let cmd = try xcrun("xcodebuild", "-list", "-json")
+                let output = try cmd.output()
+                let decoder = JSONDecoder()
+                return try decoder.decode(SchemesList.self, from: output)
+                    .workspace
+                    .schemes
+            }
+            if buildables.count == 1, case .target(let target, _) = buildables.first,
+               !availableSchemes.contains(target), let scheme = availableSchemes.first {
+
+                buildables = [.target(target, buildName: scheme)]
+            }
+
+            for product in buildables {
                 if case .binaryTarget(let target) = product {
-                    let targetPath = Config.current.buildPath + "\(product.name).xcframework"
+                    let targetPath = Config.current.buildPath + "\(target.name).xcframework"
                     let artifact = Artifact(
                         name: product.name,
                         parentName: resolvedDependency.name,
@@ -82,7 +101,7 @@ public final class PackageProcessor: DependencyProcessor {
                             task.resume()
                         }
                         .tryMap { downloadPath -> AnyArtifact in
-                            let zipPath = Config.current.cachePath + url.lastPathComponent
+                            let zipPath = Config.current.buildPath + url.lastPathComponent
 
                             if zipPath.exists {
                                 try zipPath.delete()
@@ -100,7 +119,15 @@ public final class PackageProcessor: DependencyProcessor {
 
                             log.info("Decompressing \(zipPath.lastComponent):")
 
-                            try Zip.unzipFile(zipPath.url, destination: targetPath.parent().url, overwrite: true, password: nil, progress: { log.progress(percent: $0) })
+                            var unzippedPath: Path? = nil
+                            try Zip.unzipFile(zipPath.url, destination: targetPath.parent().url, overwrite: true, password: nil, progress: { log.progress(percent: $0) }, fileOutputHandler: { unzippedFile in
+                                if unzippedFile.pathExtension == "xcframework" {
+                                    unzippedPath = Path(unzippedFile.path)
+                                }
+                            })
+                            if let unzippedPath, unzippedPath != targetPath {
+                                try unzippedPath.move(targetPath)
+                            }
 
                             return AnyArtifact(artifact)
                         }
@@ -121,7 +148,8 @@ public final class PackageProcessor: DependencyProcessor {
                     xcFrameworks <<< try self.buildAndExport(
                         buildable: product,
                         package: resolvedDependency,
-                        dependency: dependency
+                        dependency: dependency,
+                        path: path
                     )
                 }
             }
@@ -148,7 +176,7 @@ public final class PackageProcessor: DependencyProcessor {
 
     private func writeProject() throws -> Path {
         let projectName = "Packages.xcodeproj"
-        let projectPath = Config.current.cachePath + Config.current.name + projectName
+        let projectPath = Config.current.buildPath + projectName
 
         if projectPath.exists {
             try projectPath.delete()
@@ -158,7 +186,7 @@ public final class PackageProcessor: DependencyProcessor {
         }
 
         let projectSpec = Project(
-            basePath: Config.current.cachePath,
+            basePath: projectPath,
             name: projectName,
             packages: dependencies.reduce(into: [:]) { $0[$1.name] = .remote(url: $1.url.absoluteString, versionRequirement: $1.versionRequirement) },
             options: .init(
@@ -170,7 +198,7 @@ public final class PackageProcessor: DependencyProcessor {
                 )
             ))
         let projectGenerator = ProjectGenerator(project: projectSpec)
-        let project = try projectGenerator.generateXcodeProject(in: Config.current.cachePath)
+        let project = try projectGenerator.generateXcodeProject(in: projectPath)
         try project.write(path: projectPath)
 
         return projectPath
@@ -197,11 +225,12 @@ public final class PackageProcessor: DependencyProcessor {
 
         return try workspaceState.object
             .dependencies
+            .filter { package in dependencies.contains { $0.url.lastPathComponent == package.subpath } }
             .map { try SwiftPackageDescriptor(path: workspacePath.parent() + "checkouts" + Path($0.subpath), name: $0.packageRef.name) }
     }
 
     private func setupWorkingPath(for dependency: SwiftPackageDescriptor) throws -> Path {
-        let workingPath = Config.current.cachePath + dependency.name
+        let workingPath = Config.current.buildPath + dependency.name
         // Copy the repo to a temporary directory first so we don't modify
         // it in place.
         if workingPath.exists {
@@ -217,50 +246,48 @@ public final class PackageProcessor: DependencyProcessor {
         // file to build from and if there's an xcodeproj in the same directory
         // it will favor that. So we need to hide them from xcodebuild
         // temporarily while we build.
-        try path.glob("*.xcodeproj").forEach { try $0.move($0.parent() + "\($0.lastComponent).bak") }
-        try path.glob("*.xcworkspace").forEach { try $0.move($0.parent() + "\($0.lastComponent).bak") }
+        try path.glob("*.xcodeproj").forEach { try $0.delete() }
+        try path.glob("*.xcworkspace").forEach { try $0.delete() }
     }
 
     private func postBuild(path: Path) throws {
-        try path.glob("*.xcodeproj.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
-        try path.glob("*.xcworkspace.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
+//        try path.glob("*.xcodeproj.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
+//        try path.glob("*.xcworkspace.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
 
-        try path.delete()
+//        try path.delete()
     }
 
-    private func buildAndExport(buildable: SwiftPackageBuildable, package: SwiftPackageDescriptor, dependency: PackageDependency?) throws -> [Artifact] {
-        var path: Path? = nil
-
+    private func buildAndExport(buildable: SwiftPackageBuildable, package: SwiftPackageDescriptor, dependency: PackageDependency?, path: Path) throws -> [Artifact] {
         let archivePaths = try options.platforms.sdks.map { sdk -> Path in
 
             if options.skipClean, Xcode.getArchivePath(for: buildable.name, sdk: sdk).exists {
                 return Xcode.getArchivePath(for: buildable.name, sdk: sdk)
             }
 
-            if path == nil {
-                path = try self.setupWorkingPath(for: package)
-                try self.preBuild(path: path!)
+            try forceDynamicFrameworkProduct(scheme: buildable.name, in: path)
+
+            do {
+                let archivePath = try Xcode.archive(
+                    scheme: buildable.buildName,
+                    in: Config.current.buildPath + package.name,
+                    for: sdk,
+                    derivedDataPath: derivedDataPath,
+                    additionalBuildSettings: dependency?.additionalBuildSettings
+                )
+
+                try copyModulesAndHeaders(
+                    package: package,
+                    scheme: buildable.name,
+                    sdk: sdk,
+                    archivePath: archivePath,
+                    derivedDataPath: derivedDataPath
+                )
+
+                return archivePath
+            } catch {
+                log.error("Failed to build \(package.name), scheme=\(buildable.name), sdk=\(sdk.rawValue)")
+                throw error
             }
-
-            try forceDynamicFrameworkProduct(scheme: buildable.name, in: path!)
-
-            let archivePath = try Xcode.archive(
-                scheme: buildable.name,
-                in: path!,
-                for: sdk,
-                derivedDataPath: derivedDataPath,
-                additionalBuildSettings: dependency?.additionalBuildSettings
-            )
-
-            try copyModulesAndHeaders(
-                package: package,
-                scheme: buildable.name,
-                sdk: sdk,
-                archivePath: archivePath,
-                derivedDataPath: derivedDataPath
-            )
-
-            return archivePath
         }
 
         let artifacts = try Xcode.createXCFramework(
@@ -275,9 +302,7 @@ public final class PackageProcessor: DependencyProcessor {
             )
         }
 
-        if let path = path {
-            try self.postBuild(path: path)
-        }
+        try self.postBuild(path: path)
 
         return artifacts
     }
@@ -287,32 +312,38 @@ public final class PackageProcessor: DependencyProcessor {
     private func forceDynamicFrameworkProduct(scheme: String, in path: Path) throws {
         precondition(path.exists, "You must call preBuild() before calling this function")
 
-        var contents: String = try (path + "Package.swift").read()
+        for file in path.glob("Package*.swift") {
+            var contents: String = try file.read()
 
-        let productRegex = try Regex(string: #"(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)"#)
+            let productRegex = try Regex(string: #"(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)"#)
 
-        if let _ = productRegex.firstMatch(in: contents) {
-            // TODO: This should be rewritten using the Regex library
-            let packagePath = path + "Package.swift"
-            try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g"#, packagePath.string)
-            try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g"#, packagePath.string)
-            try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g"#, packagePath.string)
-        } else {
-            let insertRegex = Regex(#"products:[^\[]*\["#)
-            guard let match = insertRegex.firstMatch(in: contents)?.range else {
-                fatalError()
+            if let _ = productRegex.firstMatch(in: contents) {
+                // TODO: This should be rewritten using the Regex library
+                try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.static[^,]*,/$1/g"#, file.string)
+                try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)[^,]*type: \.dynamic[^,]*,/$1/g"#, file.string)
+                try sh("/usr/bin/perl", "-i", "-p0e", #"s/(\.library\([\n\r\s]*name\s?:\s"\#(scheme)"[^,]*,)/$1 type: \.dynamic,/g"#, file.string)
+            } else {
+                let insertRegex = Regex(#"products:[^\[]*\["#)
+                guard let match = insertRegex.firstMatch(in: contents)?.range else {
+                    fatalError()
+                }
+
+                contents.insert(contentsOf: #".library(name: "\#(scheme)", type: .dynamic, targets: ["\#(scheme)"]),"#, at: match.upperBound)
+                try file.write(contents)
             }
-
-            contents.insert(contentsOf: #".library(name: "\#(scheme)", type: .dynamic, targets: ["\#(scheme)"]),"#, at: match.upperBound)
-            try (path + "Package.swift").write(contents)
         }
     }
 
     private func copyModulesAndHeaders(package: SwiftPackageDescriptor, scheme: String, sdk: Xcodebuild.SDK, archivePath: Path, derivedDataPath: Path) throws {
         // https://forums.swift.org/t/how-to-build-swift-package-as-xcframework/41414/4
         let frameworksPath = archivePath + "Products/Library/Frameworks"
+        let frameworks = frameworksPath.glob("*.framework")
 
-        for frameworkPath in frameworksPath.glob("*.framework") {
+        if frameworks.isEmpty {
+            throw ScipioError.missingFrameworks(package: package.name)
+        }
+
+        for frameworkPath in frameworks {
             let frameworkName = frameworkPath.lastComponentWithoutExtension
             let modulesPath = frameworkPath + "Modules"
             let headersPath = frameworkPath + "Headers"
@@ -358,7 +389,7 @@ public final class PackageProcessor: DependencyProcessor {
                         includeDirectory = moduleMapPath.parent()
                     }
                 }
-                
+
                 if let moduleMapPath = moduleMapPath, moduleMapPath.exists {
                     let umbrellaHeaderRegex = Regex(#"umbrella (?:header )?"(.*)""#)
                     let umbrellaHeaderMatch = umbrellaHeaderRegex.firstMatch(in: try moduleMapPath.read())
@@ -568,5 +599,13 @@ extension WorkspaceState {
                 let url: String?
             }
         }
+    }
+}
+
+struct SchemesList: Decodable {
+    let workspace: Workspace
+
+    struct Workspace: Decodable {
+        let schemes: [String]
     }
 }

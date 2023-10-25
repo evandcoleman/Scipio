@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "Scipio",
     platforms: [
-        .macOS(.v10_15)
+        .macOS(.v11)
     ],
     products: [
         .executable(name: "Scipio", targets: ["Scipio"])
@@ -21,9 +21,12 @@ let package = Package(
         .package(url: "https://github.com/tuist/XcodeProj", from: "8.0.0"),
         .package(url: "https://github.com/jpsim/Yams", from: "4.0.6"),
         .package(url: "https://github.com/marmelroy/Zip", from: "2.1.1"),
+
+//        .package(name: "SwiftPM", url: "https://github.com/apple/swift-package-manager.git", .branch("release/5.7")),
+//        .package(url: "https://github.com/apple/swift-tools-support-core.git", .branch("release/5.7")),
     ],
     targets: [
-        .target(
+        .executableTarget(
             name: "Scipio",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -36,6 +39,8 @@ let package = Package(
                 "PathKit",
                 "Regex",
                 "SWCompression",
+//                .product(name: "SwiftPM-auto", package: "SwiftPM"),
+//                .product(name: "SwiftToolsSupport-auto", package: "swift-tools-support-core"),
                 .product(name: "XcbeautifyLib", package: "xcbeautify"),
                 .product(name: "XcodeGenKit", package: "XcodeGen"),
                 "XcodeProj",

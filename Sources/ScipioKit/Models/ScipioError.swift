@@ -7,6 +7,7 @@ public enum ScipioError: LocalizedError {
     case unknownPackage(String)
     case conflictingDependencies(product: String, conflictingDependencies: [String])
     case invalidFramework(String)
+    case missingFrameworks(package: String)
     case missingArchitectures(String, [Architecture])
 
     public var errorDescription: String? {
@@ -23,6 +24,8 @@ public enum ScipioError: LocalizedError {
             return "\(dependencies.count) dependencies (\(dependencies.joined(separator: ", "))) produce \(product). It is recommended to add \(product) as an explicit dependency and/or exclude it from the conflicting packages via the configuration file."
         case .invalidFramework(let name):
             return "Invalid framework \(name)"
+        case .missingFrameworks(let package):
+            return "Framework not found for \(package). This usually indicates a problem with the build configuration."
         case .missingArchitectures(let name, let archs):
             return "\(name) is missing required architectures \(archs.map(\.description).joined(separator: ", "))"
         }

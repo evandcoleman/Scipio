@@ -27,7 +27,7 @@ public struct BinaryDependency: Dependency, DependencyProducts {
     }
 
     public var productNamesCachePath: Path {
-        return Config.current.cachePath + ".binary-products-\(name)-\(version)"
+        return Config.current.buildPath + ".binary-products-\(name)-\(version)"
     }
 
     public func version(for productName: String) -> String {

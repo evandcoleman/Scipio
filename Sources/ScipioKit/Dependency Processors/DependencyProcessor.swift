@@ -85,7 +85,7 @@ extension DependencyProcessor {
                         let dependency = dependencies.first(where: { $0.name == dependencyProduct.name })
 
                         if let onlyDependencies = onlyDependencies,
-                           !onlyDependencies.contains(where: { $0.name == dependencyProduct.name }) {
+                           !onlyDependencies.contains(where: { $0.name == dependencyProduct.name || dependencyProduct.productNames?.contains($0.name) == true }) {
                             return Empty()
                                 .setFailureType(to: Error.self)
                                 .eraseToAnyPublisher()

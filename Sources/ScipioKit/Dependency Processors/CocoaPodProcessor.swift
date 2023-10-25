@@ -34,7 +34,7 @@ public final class CocoaPodProcessor: DependencyProcessor {
 
     public func preProcess() -> AnyPublisher<[CocoaPodDescriptor], Error> {
         return Future.try {
-            let path = Config.current.cachePath + Config.current.name
+            let path = Config.current.buildPath
 
             let (_, projectPath) = try self.writePodfile(in: path)
 
@@ -45,8 +45,6 @@ public final class CocoaPodProcessor: DependencyProcessor {
 
     public func process(_ dependency: CocoaPodDependency?, resolvedTo resolvedDependency: CocoaPodDescriptor) -> AnyPublisher<[AnyArtifact], Error> {
         return Future.try {
-            let derivedDataPath = Config.current.cachePath + "DerivedData" + Config.current.name
-
             var paths = try self.options.platforms.flatMap { platform -> [Path] in
                 let archivePaths = try platform.sdks.map { sdk -> Path in
                     let scheme = "\(resolvedDependency.name)-\(platform.rawValue)"
@@ -59,7 +57,6 @@ public final class CocoaPodProcessor: DependencyProcessor {
                         scheme: scheme,
                         in: self.projectPath.parent() + "\(self.projectPath.lastComponentWithoutExtension).xcworkspace",
                         for: sdk,
-                        derivedDataPath: derivedDataPath,
                         additionalBuildSettings: dependency?.additionalBuildSettings
                     )
                 }

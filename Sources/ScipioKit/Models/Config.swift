@@ -41,16 +41,6 @@ public struct Config: Decodable, Equatable {
         return Array(platformVersions.keys)
     }
 
-    public let cachePath: Path = {
-        let path = Path(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].path) + "Scipio"
-
-        if !path.exists {
-            try! path.mkdir()
-        }
-
-        return path
-    }()
-
     public var packageRoot: Path {
         if let localCache = cacheDelegator.local {
             return localCache.normalizedPath
