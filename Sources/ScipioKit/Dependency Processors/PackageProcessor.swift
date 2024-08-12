@@ -121,12 +121,22 @@ public final class PackageProcessor: DependencyProcessor {
 
                             var unzippedPath: Path? = nil
                             try Zip.unzipFile(zipPath.url, destination: targetPath.parent().url, overwrite: true, password: nil, progress: { log.progress(percent: $0) }, fileOutputHandler: { unzippedFile in
-                                if unzippedFile.pathExtension == "xcframework" {
-                                    unzippedPath = Path(unzippedFile.path)
+                                if unzippedPath == nil {
+                                    if unzippedFile.pathExtension == "xcframework" {
+                                        unzippedPath = Path(unzippedFile.path)
+                                    } else if
+                                        let children = try? Path(unzippedFile.path()).children(),
+                                        let frameworkChild = children.first(where: { $0.extension == "xcframework" })
+                                    {
+                                        unzippedPath = frameworkChild
+                                    }
                                 }
                             })
                             if let unzippedPath, unzippedPath != targetPath {
                                 try unzippedPath.move(targetPath)
+                            }
+                            if unzippedPath == nil {
+                                log.error("Couldn't find xcframework in archive: \(zipPath)")
                             }
 
                             return AnyArtifact(artifact)
@@ -251,10 +261,10 @@ public final class PackageProcessor: DependencyProcessor {
     }
 
     private func postBuild(path: Path) throws {
-//        try path.glob("*.xcodeproj.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
-//        try path.glob("*.xcworkspace.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
+        //        try path.glob("*.xcodeproj.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
+        //        try path.glob("*.xcworkspace.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
 
-//        try path.delete()
+        //        try path.delete()
     }
 
     private func buildAndExport(buildable: SwiftPackageBuildable, package: SwiftPackageDescriptor, dependency: PackageDependency?, path: Path) throws -> [Artifact] {
@@ -265,6 +275,19 @@ public final class PackageProcessor: DependencyProcessor {
             }
 
             try forceDynamicFrameworkProduct(scheme: buildable.name, in: path)
+
+            if let mapping = dependency?.productRenameMapping {
+                try renameProducts(using: mapping, in: path)
+            }
+
+            if let mapping = dependency?.targetRenameMapping {
+                try renameTargets(using: mapping, in: path)
+            }
+
+            if let newName = dependency?.renamePackageProduct {
+                try renameProducts(using: [package.name: newName], in: path)
+                try renameTargets(using: [package.name: newName], in: path)
+            }
 
             do {
                 let archivePath = try Xcode.archive(
@@ -331,6 +354,36 @@ public final class PackageProcessor: DependencyProcessor {
                 contents.insert(contentsOf: #".library(name: "\#(scheme)", type: .dynamic, targets: ["\#(scheme)"]),"#, at: match.upperBound)
                 try file.write(contents)
             }
+        }
+    }
+
+    private func renameProducts(using mapping: [String: String], in path: Path) throws {
+        precondition(path.exists, "You must call preBuild() before calling this function")
+
+        for file in path.glob("Package*.swift") {
+            let contents: String = try file.read()
+            var packageFile = contents.swiftPackageFile
+
+            for (productName, newValue) in mapping {
+                packageFile.replaceProductName(productName, newName: newValue)
+            }
+
+            try file.write(packageFile.contents)
+        }
+    }
+
+    private func renameTargets(using mapping: [String: String], in path: Path) throws {
+        precondition(path.exists, "You must call preBuild() before calling this function")
+
+        for file in path.glob("Package*.swift") {
+            let contents: String = try file.read()
+            var packageFile = contents.swiftPackageFile
+
+            for (productName, newValue) in mapping {
+                packageFile.replaceTargetName(productName, newName: newValue)
+            }
+
+            try file.write(packageFile.contents)
         }
     }
 

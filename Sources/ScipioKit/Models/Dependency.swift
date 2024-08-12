@@ -62,6 +62,15 @@ public struct PackageDependency: Dependency {
     public let exactVersion: String?
     public let version: String?
     public let additionalBuildSettings: [String: String]?
+    // Currently, Swift does not support packages that contain a type that is named
+    // the same as the package product when built as an .xcframework. The build will
+    // succeed but the resulting .swiftinterface file will produce a build error.
+    // To get around this, we can allow dynamically renaming products and targets
+    // to circumvent the issue.
+    public let productRenameMapping: [String: String]?
+    public let targetRenameMapping: [String: String]?
+    // A shortcut to rename a product with the same name as the package
+    public let renamePackageProduct: String?
 
     public var versionRequirement: SwiftPackage.VersionRequirement {
         if let from = from {
