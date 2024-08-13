@@ -143,7 +143,7 @@ public final class CocoaPodProcessor: DependencyProcessor {
                         ) }
                 }
         ))
-        let project = try projectGenerator.generateXcodeProject(in: path)
+        let project = try projectGenerator.generateXcodeProject(in: path, userName: "Scipio")
         try project.write(path: projectPath)
 
         try podfilePath.write("""

@@ -48,7 +48,7 @@ public struct Xcodebuild {
     }
 
     func run() throws {
-        let parser = Parser()
+        let parser = Parser(colored: log.useColors, renderer: .terminal, additionalLines: { nil })
         let output = OutputHandler(quiet: false, quieter: false, isCI: false, { log.passthrough($0) })
 
         let arguments = getArguments()
@@ -57,13 +57,13 @@ public struct Xcodebuild {
             if log.level.levelValue <= Log.Level.verbose.levelValue {
                 log.verbose(line)
             } else {
-                guard let formatted = parser.parse(line: line, colored: log.useColors) else { return }
+                guard let formatted = parser.parse(line: line) else { return }
                 output.write(parser.outputType, formatted)
             }
         }
 
-        if let summary = parser.summary {
-            print(summary.format())
+        if let summary = parser.formattedSummary() {
+            print(summary)
         }
     }
 

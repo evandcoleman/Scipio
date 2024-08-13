@@ -1,13 +1,33 @@
 import Foundation
 import PathKit
 
+import Basics
+import PackageModel
+import PackageLoading
+import PackageGraph
+import SPMBuildCore
+import TSCBasic
+import Workspace
+
 public struct SwiftPackageDescriptor: DependencyProducts {
 
     public let name: String
-    public let version: String
+    public let version: String = ""
     public let path: Path
-    public let manifest: PackageManifest
-    public let buildables: [SwiftPackageBuildable]
+    public let buildables: [SwiftPackageBuildable] = []
+
+    let toolchain: UserToolchain
+    let workspace: Workspace
+    let graph: PackageGraph
+    let manifest: Manifest
+
+    public var targets: [TargetDescription] {
+        manifest.targets
+    }
+
+    let observabilitySystem = ObservabilitySystem { _, diagnostics in
+        print("\(diagnostics.severity): \(diagnostics.message)")
+    }
 
     public var productNames: [String]? {
         return buildables.map(\.name)
@@ -17,31 +37,20 @@ public struct SwiftPackageDescriptor: DependencyProducts {
         self.name = name
         self.path = path
 
-        var gitPath = path + ".git"
-
-        guard gitPath.exists else {
-            log.fatal("Missing git directory for package: \(name)")
+        let root = try AbsolutePath(validating: path.string)
+        self.toolchain = try UserToolchain(destination: try .hostDestination())
+        let loader = ManifestLoader(toolchain: self.toolchain)
+        self.workspace = try Workspace(forRootPackage: root, customManifestLoader: loader)
+        self.graph = try workspace.loadPackageGraph(rootPath: root, observabilityScope: self.observabilitySystem.topScope)
+        let workspace = self.workspace
+        let scope = observabilitySystem.topScope
+        self.manifest = try tsc_await {
+            workspace.loadRootManifest(
+                at: root,
+                observabilityScope: scope,
+                completion: $0
+            )
         }
-
-        if gitPath.isFile {
-            guard let actualPath = (try gitPath.read()).components(separatedBy: "gitdir: ").last?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-                log.fatal("Couldn't parse .git file in \(path)")
-            }
-
-            gitPath = (gitPath.parent() + Path(actualPath)).normalize()
-        }
-
-        let headPath = gitPath + "HEAD"
-
-        guard headPath.exists else {
-            log.fatal("Missing HEAD file in \(gitPath)")
-        }
-
-        self.version = (try headPath.read())
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let manifest: PackageManifest = try .load(from: path)
-        self.manifest = manifest
-        self.buildables = manifest.getBuildables()
     }
 
     public func version(for productName: String) -> String {

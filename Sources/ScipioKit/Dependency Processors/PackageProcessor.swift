@@ -7,6 +7,8 @@ import Version
 import XcodeGenKit
 import Zip
 
+import PackageModel
+
 public final class PackageProcessor: DependencyProcessor {
 
     public let dependencies: [PackageDependency]
@@ -208,7 +210,7 @@ public final class PackageProcessor: DependencyProcessor {
                 )
             ))
         let projectGenerator = ProjectGenerator(project: projectSpec)
-        let project = try projectGenerator.generateXcodeProject(in: projectPath)
+        let project = try projectGenerator.generateXcodeProject(in: projectPath, userName: "Scipio")
         try project.write(path: projectPath)
 
         return projectPath
@@ -418,7 +420,17 @@ public final class PackageProcessor: DependencyProcessor {
                 try swiftModulePath.copy(modulesPath + "\(frameworkName).swiftmodule")
             }
 
-            if !swiftModulePath.exists || target?.settings?.contains(where: { $0.name == .headerSearchPath }) == true {
+            let hasHeaderSearchPath = target?.settings
+                .contains { setting in
+                    switch setting.kind {
+                    case .headerSearchPath:
+                        return true
+                    default:
+                        return false
+                    }
+                } ?? false
+
+            if !swiftModulePath.exists || hasHeaderSearchPath {
                 // Objective-C projects
                 let moduleMapDirectory = archiveIntermediatesPath + "IntermediateBuildFilesPath/\(package.name).build/Release-\(sdk.rawValue)/\(frameworkName).build"
                 var moduleMapPath = moduleMapDirectory.glob("*.modulemap").first
@@ -528,9 +540,18 @@ public final class PackageProcessor: DependencyProcessor {
                         .compactMap { target in package.manifest.targets.first { $0.name == target } }
                     let dependencies = targets
                         .flatMap { $0.dependencies }
-                        .flatMap { $0.names }
-                        .compactMap { target in package.manifest.targets.first { $0.name == target } }
-                    let allTargets: [PackageManifest.Target] = (targets + dependencies)
+                        .map { dependency in
+                            switch dependency {
+                            case .target(let name, _):
+                                return name
+                            case .product(let name, _, _, _):
+                                return name
+                            case .byName(let name, _):
+                                return name
+                            }
+                        }
+                        .compactMap { target in package.targets.first { $0.name == target } }
+                    let allTargets: [TargetDescription] = (targets + dependencies)
                     let headerPaths: [Path] = allTargets
                         .compactMap { target in
                             guard let publicHeadersPath = target.publicHeadersPath else { return nil }
