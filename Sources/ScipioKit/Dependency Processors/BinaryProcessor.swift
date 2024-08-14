@@ -3,6 +3,8 @@ import Foundation
 import PathKit
 import Zip
 
+import Basics
+
 public final class BinaryProcessor: DependencyProcessor {
 
     public let dependencies: [BinaryDependency]
@@ -10,7 +12,7 @@ public final class BinaryProcessor: DependencyProcessor {
 
     private let urlSession: URLSession = .createWithExtensionsSupport()
 
-    public init(dependencies: [BinaryDependency], options: ProcessorOptions) {
+    public init(dependencies: [BinaryDependency], options: ProcessorOptions, observabilityScope: ObservabilityScope) {
         self.dependencies = dependencies
         self.options = options
     }
@@ -271,7 +273,7 @@ public final class BinaryProcessor: DependencyProcessor {
             return archivePath
         }
 
-        return try Xcode.createXCFramework(archivePaths: archivePaths, skipIfExists: options.skipClean)
+        return try XcodeBuilder.createXCFramework(archivePaths: archivePaths, skipIfExists: options.skipClean)
     }
 }
 

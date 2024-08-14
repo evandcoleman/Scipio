@@ -1,10 +1,9 @@
 import Combine
 import Foundation
 import PathKit
-import ProjectSpec
 import Regex
-import XcodeGenKit
-import XcodeProj
+
+import Basics
 
 public enum CocoaPodProcessorError: LocalizedError {
     case cocoaPodsNotInstalled
@@ -27,7 +26,7 @@ public final class CocoaPodProcessor: DependencyProcessor {
 
     private var projectPath: Path!
 
-    public init(dependencies: [CocoaPodDependency], options: ProcessorOptions) {
+    public init(dependencies: [CocoaPodDependency], options: ProcessorOptions, observabilityScope: ObservabilityScope) {
         self.dependencies = dependencies
         self.options = options
     }
@@ -47,12 +46,14 @@ public final class CocoaPodProcessor: DependencyProcessor {
         var paths = try self.options.platforms.flatMap { platform -> [Path] in
             let archivePaths = try platform.sdks.map { sdk -> Path in
                 let scheme = "\(resolvedDependency.name)-\(platform.rawValue)"
+                let archivePath = XcodeBuilder.getArchivePath(dependency: resolvedDependency, scheme: scheme, sdk: sdk)
 
-                if self.options.skipClean, Xcode.getArchivePath(for: scheme, sdk: sdk).exists {
-                    return Xcode.getArchivePath(for: scheme, sdk: sdk)
+                if self.options.skipClean, archivePath.exists {
+                    return archivePath
                 }
 
-                return try Xcode.archive(
+                return try XcodeBuilder.archive(
+                    dependency: resolvedDependency,
                     scheme: scheme,
                     in: self.projectPath.parent() + "\(self.projectPath.lastComponentWithoutExtension).xcworkspace",
                     for: sdk,
@@ -60,7 +61,7 @@ public final class CocoaPodProcessor: DependencyProcessor {
                 )
             }
 
-            return try Xcode.createXCFramework(
+            return try XcodeBuilder.createXCFramework(
                 archivePaths: archivePaths,
                 skipIfExists: self.options.skipClean,
                 filter: { !$0.hasPrefix("Pods_") && $0 != "\(resolvedDependency.name)-\(platform.rawValue)" && resolvedDependency.productNames?.contains($0) == true }
@@ -118,35 +119,35 @@ public final class CocoaPodProcessor: DependencyProcessor {
             try projectPath.delete()
         }
 
-        let projectGenerator = ProjectGenerator(project: .init(
-            basePath: path,
-            name: projectPath.lastComponentWithoutExtension,
-            targets: dependencies
-                .flatMap { dependency in
-                    return Config.current.platformVersions
-                        .map { Target(name: "\(dependency.name)-\($0.key.rawValue)", type: .framework, platform: .iOS) }
-                },
-            schemes: dependencies
-                .flatMap { dependency in
-                    return Config.current.platformVersions
-                        .map { Scheme(
-                            name: "\(dependency.name)-\($0.key.rawValue)",
-                            build: Scheme.Build(targets: [.init(target: .init(name: "\(dependency.name)-\($0.key.rawValue)", location: .local))]),
-                            archive: Scheme.Archive(config: "Release")
-                        ) }
-                }
-        ))
-        let project = try projectGenerator.generateXcodeProject(in: path, userName: "Scipio")
-        try project.write(path: projectPath)
-
-        try podfilePath.write("""
-use_frameworks!
-project '\(projectPath.string)'
-
-\(dependencies
-    .map { dep in Config.current.platformVersions.map { "target '\(dep.name)-\($0.key.rawValue)' do\n\(4.spaces)platform :\($0.key.rawValue), '\($0.value)'\n\(4.spaces)\(dep.asString())\nend" }.joined(separator: "\n\n") }
-    .joined(separator: "\n\n"))
-""")
+//        let projectGenerator = ProjectGenerator(project: .init(
+//            basePath: path,
+//            name: projectPath.lastComponentWithoutExtension,
+//            targets: dependencies
+//                .flatMap { dependency in
+//                    return Config.current.platformVersions
+//                        .map { Target(name: "\(dependency.name)-\($0.key.rawValue)", type: .framework, platform: .iOS) }
+//                },
+//            schemes: dependencies
+//                .flatMap { dependency in
+//                    return Config.current.platformVersions
+//                        .map { Scheme(
+//                            name: "\(dependency.name)-\($0.key.rawValue)",
+//                            build: Scheme.Build(targets: [.init(target: .init(name: "\(dependency.name)-\($0.key.rawValue)", location: .local))]),
+//                            archive: Scheme.Archive(config: "Release")
+//                        ) }
+//                }
+//        ))
+//        let project = try projectGenerator.generateXcodeProject(in: path, userName: "Scipio")
+//        try project.write(path: projectPath)
+//
+//        try podfilePath.write("""
+//use_frameworks!
+//project '\(projectPath.string)'
+//
+//\(dependencies
+//    .map { dep in Config.current.platformVersions.map { "target '\(dep.name)-\($0.key.rawValue)' do\n\(4.spaces)platform :\($0.key.rawValue), '\($0.value)'\n\(4.spaces)\(dep.asString())\nend" }.joined(separator: "\n\n") }
+//    .joined(separator: "\n\n"))
+//""")
 
         return (podfilePath, projectPath)
     }
@@ -167,58 +168,59 @@ project '\(projectPath.string)'
         let sandboxPath = path + "Pods"
         let manifestPath = path + "Pods/Manifest.lock"
         let podsProjectPath = sandboxPath + "Pods.xcodeproj"
-        let project = try XcodeProj(path: podsProjectPath)
-        let parentProject = try XcodeProj(path: projectPath)
-        let lockFile: String = try manifestPath.read()
-
-        return try dependencies.map { dependency in
-            let projectProducts = project.productNames(for: dependency.name, podsRoot: sandboxPath)
-            let versionRegex = try Regex(string: "- \(dependency.name)\\s\\((.*)\\)")
-            let match = versionRegex.firstMatch(in: lockFile)
-
-            guard let version = match?.captures.last??.components(separatedBy: " ").last else {
-                throw CocoaPodProcessorError.missingVersion(dependency)
-            }
-
-            let versions: [String: String] = try projectProducts
-                .map { (product: $0.name, regex: try Regex(string: "- \($0.name)\\s\\((.*)\\)")) }
-                .reduce(into: [:]) { $0[$1.product] = $1.regex.firstMatch(in: lockFile)?.captures.last??.components(separatedBy: " ").last ?? version }
-            let filteredProductNames = projectProducts
-                .map(\.name)
-                .filter { dependency.excludes?.contains($0) != true }
-            let vendoredFrameworks = projectProducts
-                .compactMap { projectProduct -> Path? in
-                    switch projectProduct {
-                    case .product:
-                        return nil
-                    case .path(let path):
-                        return path
-                    }
-                }
-            let resourceBundles = vendoredFrameworks.isEmpty ? [] : parentProject.resourceBundles(
-                for: "\(dependency.name)-\(options.platforms[0].rawValue)",
-                podsRoot: sandboxPath,
-                notIn: projectProducts
-            )
-
-            if filteredProductNames.contains(dependency.name) {
-                for target in project.pbxproj.targets(named: dependency.name) {
-                    for config in target.buildConfigurationList?.buildConfigurations ?? [] {
-                        config.buildSettings["PRODUCT_NAME"] = "\(dependency.name)Package"
-                    }
-                }
-
-                try project.write(path: podsProjectPath)
-            }
-
-            return CocoaPodDescriptor(
-                name: dependency.name,
-                resolvedVersions: versions,
-                productNames: filteredProductNames,
-                vendoredFrameworks: vendoredFrameworks,
-                resourceBundles: resourceBundles
-            )
-        }
+//        let project = try XcodeProj(path: podsProjectPath)
+//        let parentProject = try XcodeProj(path: projectPath)
+//        let lockFile: String = try manifestPath.read()
+//
+//        return try dependencies.map { dependency in
+//            let projectProducts = project.productNames(for: dependency.name, podsRoot: sandboxPath)
+//            let versionRegex = try Regex(string: "- \(dependency.name)\\s\\((.*)\\)")
+//            let match = versionRegex.firstMatch(in: lockFile)
+//
+//            guard let version = match?.captures.last??.components(separatedBy: " ").last else {
+//                throw CocoaPodProcessorError.missingVersion(dependency)
+//            }
+//
+//            let versions: [String: String] = try projectProducts
+//                .map { (product: $0.name, regex: try Regex(string: "- \($0.name)\\s\\((.*)\\)")) }
+//                .reduce(into: [:]) { $0[$1.product] = $1.regex.firstMatch(in: lockFile)?.captures.last??.components(separatedBy: " ").last ?? version }
+//            let filteredProductNames = projectProducts
+//                .map(\.name)
+//                .filter { dependency.excludes?.contains($0) != true }
+//            let vendoredFrameworks = projectProducts
+//                .compactMap { projectProduct -> Path? in
+//                    switch projectProduct {
+//                    case .product:
+//                        return nil
+//                    case .path(let path):
+//                        return path
+//                    }
+//                }
+//            let resourceBundles = vendoredFrameworks.isEmpty ? [] : parentProject.resourceBundles(
+//                for: "\(dependency.name)-\(options.platforms[0].rawValue)",
+//                podsRoot: sandboxPath,
+//                notIn: projectProducts
+//            )
+//
+//            if filteredProductNames.contains(dependency.name) {
+//                for target in project.pbxproj.targets(named: dependency.name) {
+//                    for config in target.buildConfigurationList?.buildConfigurations ?? [] {
+//                        config.buildSettings["PRODUCT_NAME"] = "\(dependency.name)Package"
+//                    }
+//                }
+//
+//                try project.write(path: podsProjectPath)
+//            }
+//
+//            return CocoaPodDescriptor(
+//                name: dependency.name,
+//                resolvedVersions: versions,
+//                productNames: filteredProductNames,
+//                vendoredFrameworks: vendoredFrameworks,
+//                resourceBundles: resourceBundles
+//            )
+//        }
+        return []
     }
 }
 

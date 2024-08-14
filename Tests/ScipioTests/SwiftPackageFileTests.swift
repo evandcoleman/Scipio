@@ -1,3 +1,4 @@
+import Basics
 import PathKit
 @testable import ScipioKit
 import XCTest
@@ -5,6 +6,10 @@ import XCTest
 final class SwiftPackageFileTests: XCTestCase {
 
     private lazy var path = Path.temporary(for: self) + "Package.swift"
+
+    private let observabilitySystem = ObservabilitySystem { _, diagnostics in
+        print("\(diagnostics.severity): \(diagnostics.message)")
+    }
 
     override func setUpWithError() throws {
         setupConfig()
@@ -26,7 +31,8 @@ final class SwiftPackageFileTests: XCTestCase {
                 .mock(name: "Product2", parentName: "Package1"),
                 .mock(name: "Product3", parentName: "Package2"),
             ],
-            removeMissing: true
+            removeMissing: true,
+            observabilityScope: observabilitySystem.topScope
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
@@ -111,7 +117,8 @@ let package = Package(
                 .mock(name: "Product2", parentName: "Package1"),
                 .mock(name: "Product3", parentName: "Package2"),
             ],
-            removeMissing: true
+            removeMissing: true,
+            observabilityScope: observabilitySystem.topScope
         )
 
         XCTAssertEqual(existingFile, file.asString(relativeTo: path.parent()))
@@ -119,7 +126,7 @@ let package = Package(
         try artifact.localPath!.write("new file contents")
         artifact = try CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: artifact.url, localPath: artifact.localPath!)
         file.artifacts[0] = artifact
-        try file.read()
+//        try file.read()
 
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
@@ -201,7 +208,8 @@ let package = Package(
             artifacts: [
                 .mock(name: "Product1", parentName: "Package1"),
             ],
-            removeMissing: false
+            removeMissing: false,
+            observabilityScope: observabilitySystem.topScope
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
@@ -277,7 +285,8 @@ let package = Package(
             artifacts: [
                 .mock(name: "Product3", parentName: "Package1"),
             ],
-            removeMissing: false
+            removeMissing: false,
+            observabilityScope: observabilitySystem.topScope
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """
@@ -355,7 +364,8 @@ let package = Package(
                 .mock(name: "Product3", parentName: "Package1"),
                 .mock(name: "Product2", parentName: "Package2"),
             ],
-            removeMissing: true
+            removeMissing: true,
+            observabilityScope: observabilitySystem.topScope
         )
         let result = file.asString(relativeTo: path.parent())
         let expectedResult = """

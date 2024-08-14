@@ -5,39 +5,114 @@ deploymentTarget:
 
 cache:
   local:
-    path: ./
+    path: ./Dependencies
 
 packages:
-  # - name: Pushwoosh
-  #   url: https://github.com/Pushwoosh/Pushwoosh-XCFramework
-  #   from: 6.0.0
+  # - name: Apollo
+  #   url: https://github.com/apollographql/apollo-ios
+  #   from: 1.6.0
+  - name: BarricadeKit
+    url: https://github.com/johntmcintosh/BarricadeKit
+    branch: 3.0.0-alpha
+  - name: Beacon-iOS
+    url: https://github.com/helpscout/beacon-ios-sdk
+    from: 3.0.0
+  - name: Cache
+    url: https://github.com/hyperoslo/Cache
+    from: 7.3.0
+  - name: Difference
+    url: https://github.com/krzysztofzablocki/Difference
+    from: 1.0.0
+  # - name: DropDown
+  #   url: https://github.com/AssistoLab/DropDown
+  #   revision: 2ab6f6ce19f0117d1a76ea043ef8f57722c65d16
   # - name: Firebase
-  #   url: https://github.com/firebase/firebase-ios-sdk
-  #   from: 9.0.0
-  # - name: Amplitude
-  #   url: https://github.com/amplitude/Amplitude-iOS
-  #   from: 8.0.0
-  - name: Kingfisher
-    url: https://github.com/onevcat/Kingfisher
-    from: 7.0.0
-  # - name: CombineCocoa
-  #   url: https://github.com/CombineCommunity/CombineCocoa
-  #   from: 0.4.0
-  # - name: CombineExt
-  #   url: https://github.com/CombineCommunity/CombineExt
-  #   from: 1.0.0
-  # - name: Factory
-  #   url: https://github.com/hmlongco/Factory
-  #   from: 1.0.0
-  # - name: Lottie
-  #   url: https://github.com/airbnb/lottie-ios.git
-  #   from: 3.0.0
-  # - name: AutoChangeable
-  #   url: https://github.com/almazrafi/AutoChangeable
-  #   from: 1.0.0
+  #   url: https://github.com/afresh-technologies/firebase-ios-sdk-xcframeworks
+  #   from: 10.0.0
+  # - name: Hydra
+  #   url: https://github.com/malcommac/Hydra
+  #   from: 2.0.6
+  # - name: Instabug
+  #   url: https://github.com/Instabug/Instabug-SP
+  #   from: 13.0.0
+  # - name: Katana
+  #   url: https://github.com/BendingSpoons/katana-swift
+  #   from: 6.0.3
+  # - name: KeychainAccess
+  #   url: https://github.com/kishikawakatsumi/KeychainAccess
+  #   from: 4.2.2
+  # - name: Pendo
+  #   url: https://github.com/pendo-io/pendo-mobile-sdk
+  #   from: 3.1.0
+  # - name: Reachability
+  #   url: https://github.com/ashleymills/Reachability.swift
+  #   from: 5.2.3
+  - name: Segment
+    url: https://github.com/segmentio/analytics-swift
+    from: 1.0.0
+  # - name: Sentry
+  #   url: https://github.com/getsentry/sentry-cocoa
+  #   from: 8.11.0
+  # - name: SnapshotTesting
+  #   url: https://github.com/pointfreeco/swift-snapshot-testing
+  #   from: 1.15.0
+  - name: SwiftAlgorithms
+    url: https://github.com/apple/swift-algorithms
+    from: 1.2.0
+  - name: SwiftDemangle
+    url: https://github.com/oozoofrog/SwiftDemangle
+    from: 5.9.1
+  - name: Swifter
+    url: https://github.com/httpswift/swifter
+    from: 1.5.0
+  # - name: SwiftTweaks
+  #   url: https://github.com/Khan/SwiftTweaks
+  #   from: 4.1.2
+  - name: SwiftyJSON
+    url: https://github.com/SwiftyJSON/SwiftyJSON
+    from: 5.0.1
+  - name: Tempura
+    url: https://github.com/afresh-technologies/tempura-swift
+    revision: 4deb0732413731ff74db699e2ff1bc7ad32c6d7f
+    excludes:
+      - TempuraTesting
+  - name: TPKeyboardAvoiding
+    url: https://github.com/michaeltyson/TPKeyboardAvoiding
+    from: 1.3.5
+  - name: XCGLogger
+    url: https://github.com/DaveWoodCom/XCGLogger
+    from: 7.0.1
+
+  # # - name: Pushwoosh
+  # #   url: https://github.com/Pushwoosh/Pushwoosh-XCFramework
+  # #   from: 6.0.0
+  # # - name: Firebase
+  # #   url: https://github.com/firebase/firebase-ios-sdk
+  # #   from: 9.0.0
+  # # - name: Amplitude
+  # #   url: https://github.com/amplitude/Amplitude-iOS
+  # #   from: 8.0.0
+  # # - name: Kingfisher
+  # #   url: https://github.com/onevcat/Kingfisher
+  # #   from: 7.0.0
+  # # - name: CombineCocoa
+  # #   url: https://github.com/CombineCommunity/CombineCocoa
+  # #   from: 0.4.0
+  # # - name: CombineExt
+  # #   url: https://github.com/CombineCommunity/CombineExt
+  # #   from: 1.0.0
+  # # - name: Factory
+  # #   url: https://github.com/hmlongco/Factory
+  # #   from: 1.0.0
+  # # - name: Lottie
+  # #   url: https://github.com/airbnb/lottie-ios.git
+  # #   from: 3.0.0
+  # # - name: AutoChangeable
+  # #   url: https://github.com/almazrafi/AutoChangeable
+  # #   from: 1.0.0
   # - name: ResponsiveTextField
   #   url: https://github.com/swensonhe/swift-responsive-textfield
-  #   from: 0.0.0
+  #   from: 0.9.8
   # - name: Focuser
   #   url: https://github.com/swensonhe/swift-focuser
   #   from: 1.0.0
@@ -47,9 +122,9 @@ packages:
   # - name: ActivityIndicatorView
   #   url: https://github.com/exyte/ActivityIndicatorView
   #   from: 0.0.1
-  # - name: AWSiOSSDKV2
-  #   url: https://github.com/aws-amplify/aws-sdk-ios-spm
-  #   from: 2.0.0
+  # # - name: AWSiOSSDKV2
+  # #   url: https://github.com/aws-amplify/aws-sdk-ios-spm
+  # #   from: 2.0.0
   # - name: Alamofire
   #   url: https://github.com/Alamofire/Alamofire
   #   from: 5.6.4

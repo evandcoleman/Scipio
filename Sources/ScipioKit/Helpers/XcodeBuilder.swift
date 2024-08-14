@@ -16,12 +16,12 @@ func xcrun(_ command: String, _ arguments: [String], in path: Path? = nil, passE
     return try sh("/usr/bin/xcrun", [command] + arguments, in: path, passEnvironment: passEnvironment, file: file, line: line, lineReader: lineReader)
 }
 
-struct Xcode {
-    static func getArchivePath(for scheme: String, sdk: Xcodebuild.SDK) -> Path {
-        return Config.current.buildPath + "\(scheme)-\(sdk.rawValue).xcarchive"
+struct XcodeBuilder {
+    static func getArchivePath(dependency: any NamedDependency, scheme: String, sdk: Xcodebuild.SDK) -> Path {
+        return Config.current.getArchivePath(for: dependency) + "\(scheme)-\(sdk.rawValue).xcarchive"
     }
 
-    static func archive(scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path? = nil, sourcePackagesPath: Path? = nil, additionalBuildSettings: [String: String]?) throws -> Path {
+    static func archive(dependency: any NamedDependency, scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path? = nil, sourcePackagesPath: Path? = nil, additionalBuildSettings: [String: String]?) throws -> Path {
 
         var buildSettings: [String: String] = [
             "BUILD_LIBRARY_FOR_DISTRIBUTION": "YES",
@@ -37,7 +37,7 @@ struct Xcode {
             buildSettings.merge(additionalBuildSettings) { l, r in r }
         }
 
-        let archivePath = getArchivePath(for: scheme, sdk: sdk)
+        let archivePath = getArchivePath(dependency: dependency, scheme: scheme, sdk: sdk)
 
         log.info("🏗  Building \(scheme)-\(sdk.rawValue)...")
 

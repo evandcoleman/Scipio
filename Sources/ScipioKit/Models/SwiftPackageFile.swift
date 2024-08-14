@@ -1,6 +1,12 @@
 import Foundation
 import PathKit
 
+import Basics
+import PackageLoading
+import PackageModel
+import TSCBasic
+import Workspace
+
 public struct SwiftPackageFile {
     public var name: String
     public var path: Path
@@ -11,12 +17,22 @@ public struct SwiftPackageFile {
     public var artifacts: [CachedArtifact]
     public var removeMissing: Bool
 
-    public init(name: String, path: Path, platforms: [Platform: String], artifacts: [CachedArtifact], removeMissing: Bool) throws {
+    private let observabilityScope: ObservabilityScope
+
+    public init(
+        name: String,
+        path: Path,
+        platforms: [Platform: String],
+        artifacts: [CachedArtifact],
+        removeMissing: Bool,
+        observabilityScope: ObservabilityScope
+    ) throws {
         self.name = name
         self.path = path.lastComponent == "Package.swift" ? path : path + "Package.swift"
         self.platforms = platforms
         self.artifacts = artifacts
         self.removeMissing = removeMissing
+        self.observabilityScope = observabilityScope
 
         try read()
     }
@@ -28,7 +44,7 @@ public struct SwiftPackageFile {
     }
 
     public mutating func read() throws {
-        let manifest = path.exists ? try PackageManifest.load(from: path.parent()) : nil
+        let manifest = try readManifest()
         var artifactsAndTargets: [(name: String, artifact: CachedArtifact?, target: Target?)] = manifest?
             .targets
             .compactMap { target -> (String, CachedArtifact?, Target?)? in
@@ -75,7 +91,7 @@ public struct SwiftPackageFile {
                             checksum: nil
                         )
                     } else {
-                        let existingPath = Config.current.buildPath + "\(name).xcframework.zip"
+                        let existingPath = Config.current.buildPath + "Archives" + name + "\(name).xcframework.zip"
 
                         if existingPath.exists {
                             return Target(name: name, url: artifact.url, checksum: try existingPath.checksum(.sha256))
@@ -86,7 +102,7 @@ public struct SwiftPackageFile {
                 } else if let target = target {
                     return target
                 } else {
-                    fatalError()
+                    fatalError("missing target and artifact")
                 }
             }
     }
@@ -95,9 +111,25 @@ public struct SwiftPackageFile {
         try path.write(asString(relativeTo: relativeTo))
     }
 
+    private func readManifest() throws -> Manifest? {
+        guard path.exists else { return nil }
+
+        let parentPath = try AbsolutePath(validating: path.parent().string)
+        let toolchain = try UserToolchain(destination: try .hostDestination())
+        let loader = ManifestLoader(toolchain: toolchain)
+        let workspace = try Workspace(forRootPackage: parentPath, customManifestLoader: loader)
+        return try tsc_await {
+            workspace.loadRootManifest(
+                at: parentPath,
+                observabilityScope: observabilityScope,
+                completion: $0
+            )
+        }
+    }
+
     func asString(relativeTo: Path) -> String {
         return """
-// swift-tools-version: 5.6
+// swift-tools-version: 5.7
 import PackageDescription
 
 let package = Package(
@@ -141,7 +173,7 @@ extension SwiftPackageFile {
         public var url: URL
         public var checksum: String?
 
-        public init(_ target: PackageManifest.Target) {
+        public init(_ target: TargetDescription) {
             name = target.name
             checksum = target.checksum
 
@@ -150,7 +182,7 @@ extension SwiftPackageFile {
             } else if let path = target.path {
                 self.url = URL(fileURLWithPath: path)
             } else {
-                fatalError()
+                fatalError("target missing url and path")
             }
         }
 

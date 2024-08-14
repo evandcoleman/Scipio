@@ -1,13 +1,15 @@
 import Combine
 import Foundation
 import PathKit
-import ProjectSpec
 import Regex
-import Version
-import XcodeGenKit
 import Zip
 
+import Basics
+import PackageLoading
 import PackageModel
+import SourceControl
+import TSCBasic
+import Workspace
 
 public final class PackageProcessor: DependencyProcessor {
 
@@ -23,22 +25,111 @@ public final class PackageProcessor: DependencyProcessor {
     }
 
     private let urlSession: URLSession = .createWithExtensionsSupport()
+    private let observabilityScope: ObservabilityScope
 
-    public init(dependencies: [PackageDependency], options: ProcessorOptions) {
+    public init(
+        dependencies: [PackageDependency],
+        options: ProcessorOptions,
+        observabilityScope: ObservabilityScope
+    ) {
         self.dependencies = dependencies
         self.options = options
+        self.observabilityScope = observabilityScope
+    }
+
+    private func observabilityScope(for package: PackageDependency) -> ObservabilityScope {
+        return observabilityScope(description: package.name)
+    }
+
+    private func observabilityScope(for package: SwiftPackageDescriptor) -> ObservabilityScope {
+        return observabilityScope(description: package.name)
+    }
+
+    private func observabilityScope(description: String) -> ObservabilityScope {
+        return observabilityScope
+            .makeChildScope(description: description)
     }
 
     public func preProcess() async throws -> [SwiftPackageDescriptor] {
-        let projectPath = try writeProject()
+//        let projectPath = try writeProject()
 
         if !derivedDataPath.exists {
             try derivedDataPath.mkpath()
         }
 
-        try resolvePackageDependencies(in: projectPath, sourcePackagesPath: sourcePackagesPath)
+        
 
-        return try readPackages(sourcePackagesPath: sourcePackagesPath)
+//        try resolvePackageDependencies(in: projectPath, sourcePackagesPath: sourcePackagesPath)
+
+//        return try readPackages(sourcePackagesPath: sourcePackagesPath)
+
+        let fileSystem = localFileSystem
+        let packagesPath = Config.current.getPackageRepositoriesPath()
+        let path = try AbsolutePath(validating: packagesPath.string)
+        let repositoryProvider = GitRepositoryProvider()
+        let repositoryManager = RepositoryManager(
+            fileSystem: fileSystem,
+            path: path,
+            provider: repositoryProvider,
+            cachePath: .none,
+            initializationWarningHandler: { log.warning($0) },
+            delegate: nil
+        )
+
+        var packages: [SwiftPackageDescriptor] = []
+//        let root = try AbsolutePath(validating: packagesPath.string)
+
+        for dependency in dependencies {
+            let checkoutPath = packagesPath + dependency.name
+            let path = try AbsolutePath(validating: checkoutPath.string)
+            let repository = RepositorySpecifier(url: .init(dependency.url.absoluteString))
+
+            if checkoutPath.exists {
+                let workingCopy = try repositoryManager.openWorkingCopy(at: path)
+
+                try fileSystem.chmod(.userWritable, path: path, options: [.recursive, .onlyFiles])
+                try workingCopy.fetch()
+                try? fileSystem.chmod(.userUnWritable, path: path, options: [.recursive, .onlyFiles])
+            }
+
+            let handle = try await withCheckedThrowingContinuation { continuation in
+                repositoryManager.lookup(
+                    package: .init(urlString: dependency.url.absoluteString),
+                    repository: repository,
+                    skipUpdate: true,
+                    observabilityScope: observabilityScope(for: dependency),
+                    delegateQueue: .sharedConcurrent,
+                    callbackQueue: .sharedConcurrent,
+                    completion: { result in
+                        continuation.resume(with: result)
+                    }
+                )
+            }
+
+            // Remove any existing content at that path.
+            try fileSystem.chmod(.userWritable, path: path, options: [.recursive, .onlyFiles])
+            try fileSystem.removeFileTree(path)
+
+            // Create the working copy.
+            let workingCheckout = try handle.createWorkingCopy(at: path, editable: false)
+
+            do {
+                try workingCheckout.checkout(revision: .init(identifier: dependency.resolvedRevision))
+            } catch let error as GitRepositoryError {
+                observabilityScope(for: dependency).emit(error: error.message)
+            } catch {
+                observabilityScope(for: dependency).emit(error: error.localizedDescription)
+            }
+
+            packages.append(try SwiftPackageDescriptor(
+                path: checkoutPath,
+                name: dependency.name,
+                version: dependency.resolvedRevision,
+                observabilityScope: observabilityScope(for: dependency)
+            ))
+        }
+
+        return packages
     }
 
     public func process(
@@ -46,9 +137,14 @@ public final class PackageProcessor: DependencyProcessor {
         resolvedTo resolvedDependency: SwiftPackageDescriptor
     ) async throws -> [AnyArtifact] {
 
-        let path = try setupWorkingPath(for: resolvedDependency)
-        try preBuild(path: path)
-        let buildables = try getBuildables(dependency: resolvedDependency, path: path)
+        let path = try getWorkingPath(for: resolvedDependency)
+        try preBuild(dependency: resolvedDependency, path: path)
+        let projectPath = try writeProject(dependency: resolvedDependency, path: path)
+        var buildables = try getBuildables(dependency: resolvedDependency, path: path)
+
+        if let excludes = dependency?.excludes {
+            buildables = buildables.filter { buildable in !excludes.contains(buildable.name) }
+        }
 
         var xcFrameworks: [AnyArtifact] = []
         var downloads: [() -> Task<AnyArtifact, Error>] = []
@@ -72,7 +168,7 @@ public final class PackageProcessor: DependencyProcessor {
                         buildable: product,
                         package: resolvedDependency,
                         dependency: dependency,
-                        path: path
+                        path: projectPath.parent()
                     ).map(AnyArtifact.init)
                 )
             }
@@ -95,7 +191,7 @@ public final class PackageProcessor: DependencyProcessor {
             let output = try cmd.output()
             let decoder = JSONDecoder()
             return try decoder.decode(SchemesList.self, from: output)
-                .workspace
+                .project
                 .schemes
         }
         if buildables.count == 1, case .target(let target, _) = buildables.first,
@@ -109,10 +205,10 @@ public final class PackageProcessor: DependencyProcessor {
 
     private func processBinaryTarget(
         buildable: SwiftPackageBuildable,
-        target: PackageManifest.Target,
+        target: TargetDescription,
         dependency: SwiftPackageDescriptor
     ) throws -> (Artifact, (() -> Task<AnyArtifact, Error>)?) {
-        let targetPath = Config.current.buildPath + "\(target.name).xcframework"
+        let targetPath = Config.current.getFrameworkPath(for: dependency, productName: target.name)
         let artifact = Artifact(
             name: buildable.name,
             parentName: dependency.name,
@@ -148,7 +244,7 @@ public final class PackageProcessor: DependencyProcessor {
                         task.resume()
                     }
 
-                    let zipPath = Config.current.buildPath + url.lastPathComponent
+                    let zipPath = Config.current.getCompressedFrameworkPath(for: dependency, productName: url.lastPathComponent.components(separatedBy: ".").dropLast().joined(separator: "."))
 
                     if zipPath.exists {
                         try zipPath.delete()
@@ -202,46 +298,61 @@ public final class PackageProcessor: DependencyProcessor {
             return (artifact, downloadTask)
         } else if let targetPath = target.path {
             let fullPath = dependency.path + Path(targetPath)
-            let targetPath = Config.current.buildPath + fullPath.lastComponent
+            let targetPath = Config.current.getFrameworkPath(for: dependency, productName: buildable.name)
 
             if targetPath.exists {
                 try targetPath.delete()
+            }
+
+            if !targetPath.parent().exists {
+                try targetPath.parent().mkpath()
             }
 
             try fullPath.copy(targetPath)
 
             return (artifact, nil)
         } else {
-            fatalError()
+            fatalError("unexpected binary target")
         }
     }
 
-    private func writeProject() throws -> Path {
-        let projectName = "Packages.xcodeproj"
-        let projectPath = Config.current.buildPath + projectName
+    private func writeProject(dependency: SwiftPackageDescriptor, path: Path) throws -> Path {
+        let outputDir = try AbsolutePath(validating: path.string)
+        let projectAbsolutePath = XcodeProject.makePath(outputDir: outputDir, projectName: dependency.name)
+        let projectPath = Path(projectAbsolutePath.pathString)
 
         if projectPath.exists {
             try projectPath.delete()
         }
-        if !projectPath.parent().exists {
-            try projectPath.parent().mkpath()
+        try projectPath.mkpath()
+
+        let project = try pbxproj (
+            xcodeprojPath: projectAbsolutePath,
+            graph: dependency.graph,
+            extraDirs: [],
+            extraFiles: [],
+            options: XcodeprojOptions (
+                xcconfigOverrides: nil,
+                useLegacySchemeGenerator: true
+            ),
+            fileSystem: localFileSystem,
+            observabilityScope: observabilityScope(for: dependency)
+        )
+
+        if let deploymentTarget = Config.current.deploymentTarget["iOS"] {
+            project.buildSettings.common.IPHONEOS_DEPLOYMENT_TARGET = deploymentTarget
+        }
+        if let deploymentTarget = Config.current.deploymentTarget["tvOS"] {
+            project.buildSettings.common.TVOS_DEPLOYMENT_TARGET = deploymentTarget
+        }
+        if let deploymentTarget = Config.current.deploymentTarget["watchOS"] {
+            project.buildSettings.common.WATCHOS_DEPLOYMENT_TARGET = deploymentTarget
+        }
+        if let deploymentTarget = Config.current.deploymentTarget["macOS"] {
+            project.buildSettings.common.MACOSX_DEPLOYMENT_TARGET = deploymentTarget
         }
 
-        let projectSpec = Project(
-            basePath: projectPath,
-            name: projectName,
-            packages: dependencies.reduce(into: [:]) { $0[$1.name] = .remote(url: $1.url.absoluteString, versionRequirement: $1.versionRequirement) },
-            options: .init(
-                deploymentTarget: .init(
-                    iOS: Version(Config.current.deploymentTarget["iOS"] ?? ""),
-                    tvOS: Version(Config.current.deploymentTarget["tvOS"] ?? ""),
-                    watchOS: Version(Config.current.deploymentTarget["watchOS"] ?? ""),
-                    macOS: Version(Config.current.deploymentTarget["macOS"] ?? "")
-                )
-            ))
-        let projectGenerator = ProjectGenerator(project: projectSpec)
-        let project = try projectGenerator.generateXcodeProject(in: projectPath, userName: "Scipio")
-        try project.write(path: projectPath)
+        try project.save(to: projectAbsolutePath)
 
         return projectPath
     }
@@ -258,32 +369,11 @@ public final class PackageProcessor: DependencyProcessor {
         try command.run()
     }
 
-    private func readPackages(sourcePackagesPath: Path) throws -> [SwiftPackageDescriptor] {
-        log.info("🧮  Loading Swift packages...")
-
-        let decoder = JSONDecoder()
-        let workspacePath = sourcePackagesPath + "workspace-state.json"
-        let workspaceState = try decoder.decode(WorkspaceState.self, from: try workspacePath.read())
-
-        return try workspaceState.object
-            .dependencies
-            .filter { package in dependencies.contains { $0.url.lastPathComponent == package.subpath } }
-            .map { try SwiftPackageDescriptor(path: workspacePath.parent() + "checkouts" + Path($0.subpath), name: $0.packageRef.name) }
+    private func getWorkingPath(for dependency: SwiftPackageDescriptor) throws -> Path {
+        return Config.current.getPackageRepositoryPath(for: dependency)
     }
 
-    private func setupWorkingPath(for dependency: SwiftPackageDescriptor) throws -> Path {
-        let workingPath = Config.current.buildPath + dependency.name
-        // Copy the repo to a temporary directory first so we don't modify
-        // it in place.
-        if workingPath.exists {
-            try workingPath.delete()
-        }
-        try dependency.path.copy(workingPath)
-
-        return workingPath
-    }
-
-    private func preBuild(path: Path) throws {
+    private func preBuild(dependency: SwiftPackageDescriptor, path: Path) throws {
         // Xcodebuild doesn't provide an option for specifying a Package.swift
         // file to build from and if there's an xcodeproj in the same directory
         // it will favor that. So we need to hide them from xcodebuild
@@ -292,39 +382,27 @@ public final class PackageProcessor: DependencyProcessor {
         try path.glob("*.xcworkspace").forEach { try $0.delete() }
     }
 
-    private func postBuild(path: Path) throws {
-        //        try path.glob("*.xcodeproj.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
-        //        try path.glob("*.xcworkspace.bak").forEach { try $0.move($0.parent() + "\($0.lastComponentWithoutExtension)") }
-
-        //        try path.delete()
-    }
-
-    private func buildAndExport(buildable: SwiftPackageBuildable, package: SwiftPackageDescriptor, dependency: PackageDependency?, path: Path) throws -> [Artifact] {
+    private func buildAndExport(
+        buildable: SwiftPackageBuildable,
+        package: SwiftPackageDescriptor,
+        dependency: PackageDependency?,
+        path: Path
+    ) throws -> [Artifact] {
         let archivePaths = try options.platforms.sdks.map { sdk -> Path in
 
-            if options.skipClean, Xcode.getArchivePath(for: buildable.name, sdk: sdk).exists {
-                return Xcode.getArchivePath(for: buildable.name, sdk: sdk)
+            let archivePath = XcodeBuilder.getArchivePath(dependency: package, scheme: buildable.name, sdk: sdk)
+
+            if options.skipClean, archivePath.exists {
+                return archivePath
             }
 
             try forceDynamicFrameworkProduct(scheme: buildable.name, in: path)
 
-            if let mapping = dependency?.productRenameMapping {
-                try renameProducts(using: mapping, in: path)
-            }
-
-            if let mapping = dependency?.targetRenameMapping {
-                try renameTargets(using: mapping, in: path)
-            }
-
-            if let newName = dependency?.renamePackageProduct {
-                try renameProducts(using: [package.name: newName], in: path)
-                try renameTargets(using: [package.name: newName], in: path)
-            }
-
             do {
-                let archivePath = try Xcode.archive(
+                let archivePath = try XcodeBuilder.archive(
+                    dependency: package, 
                     scheme: buildable.buildName,
-                    in: Config.current.buildPath + package.name,
+                    in: path,
                     for: sdk,
                     derivedDataPath: derivedDataPath,
                     additionalBuildSettings: dependency?.additionalBuildSettings
@@ -345,7 +423,7 @@ public final class PackageProcessor: DependencyProcessor {
             }
         }
 
-        let artifacts = try Xcode.createXCFramework(
+        let artifacts = try XcodeBuilder.createXCFramework(
             archivePaths: archivePaths,
             skipIfExists: options.skipClean
         ).map { path in
@@ -356,8 +434,6 @@ public final class PackageProcessor: DependencyProcessor {
                 path: path
             )
         }
-
-        try self.postBuild(path: path)
 
         return artifacts
     }
@@ -380,7 +456,7 @@ public final class PackageProcessor: DependencyProcessor {
             } else {
                 let insertRegex = Regex(#"products:[^\[]*\["#)
                 guard let match = insertRegex.firstMatch(in: contents)?.range else {
-                    fatalError()
+                    fatalError("failed to force dynamic framework")
                 }
 
                 contents.insert(contentsOf: #".library(name: "\#(scheme)", type: .dynamic, targets: ["\#(scheme)"]),"#, at: match.upperBound)
@@ -707,9 +783,9 @@ extension WorkspaceState {
 }
 
 struct SchemesList: Decodable {
-    let workspace: Workspace
+    let project: Project
 
-    struct Workspace: Decodable {
+    struct Project: Decodable {
         let schemes: [String]
     }
 }

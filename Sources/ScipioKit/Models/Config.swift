@@ -97,4 +97,24 @@ public struct Config: Decodable, Equatable {
             log.fatal("Error read config file at path \(path): \(error)")
         }
     }
+
+    func getArchivePath(for dependency: any NamedDependency) -> Path {
+        return buildPath + "Archives" + dependency.name
+    }
+
+    func getFrameworkPath(for dependency: any NamedDependency, productName: String) -> Path {
+        return getArchivePath(for: dependency) + "\(productName).xcframework"
+    }
+
+    func getCompressedFrameworkPath(for dependency: any NamedDependency, productName: String) -> Path {
+        return getArchivePath(for: dependency) + "\(productName).xcframework.zip"
+    }
+
+    func getPackageRepositoriesPath() -> Path {
+        return buildPath + "PackageRepositories"
+    }
+
+    func getPackageRepositoryPath(for dependency: any NamedDependency) -> Path {
+        return buildPath + "PackageRepositories" + dependency.name
+    }
 }

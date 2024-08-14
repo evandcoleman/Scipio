@@ -63,8 +63,10 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
         if cachePath.exists {
             if destination.exists {
                 try destination.delete()
+            } else {
+                try destination.parent().mkpath()
             }
-            
+
             try cachePath.copy(destination)
             
             return Artifact(

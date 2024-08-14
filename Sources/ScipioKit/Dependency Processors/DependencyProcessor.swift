@@ -2,6 +2,12 @@ import Combine
 import Foundation
 import PathKit
 
+import Basics
+
+public protocol NamedDependency {
+    var name: String { get }
+}
+
 public protocol DependencyProcessor {
     associatedtype Input: Dependency
     associatedtype ResolvedInput: DependencyProducts
@@ -9,15 +15,14 @@ public protocol DependencyProcessor {
     var dependencies: [Input] { get }
     var options: ProcessorOptions { get }
 
-    init(dependencies: [Input], options: ProcessorOptions)
+    init(dependencies: [Input], options: ProcessorOptions, observabilityScope: ObservabilityScope)
 
     func preProcess() async throws -> [ResolvedInput]
     func process(_ dependency: Input?, resolvedTo resolvedDependency: ResolvedInput) async throws -> [AnyArtifact]
     func postProcess() async throws
 }
 
-public protocol DependencyProducts {
-    var name: String { get }
+public protocol DependencyProducts: NamedDependency {
     var productNames: [String]? { get }
 
     func version(for productName: String) -> String
@@ -33,7 +38,10 @@ extension DependencyProcessor {
                 return (dependency
                     .productNames ?? [])
                     .compactMap { productName in
-                        let path = Config.current.buildPath + "\(productName).xcframework.zip"
+                        let path = Config.current.getCompressedFrameworkPath(
+                            for: dependency,
+                            productName: productName
+                        )
 
                         guard path.exists else {
                             log.warning("Skipping \(path.lastComponent) because it doesn't exist.")
@@ -110,7 +118,7 @@ extension DependencyProcessor {
 
             if missingProductNames.isEmpty {
                 for productName in productNames {
-                    let path = Config.current.buildPath + "\(productName).xcframework"
+                    let path = Config.current.getFrameworkPath(for: dependencyProduct, productName: productName)
 
                     if path.exists, self.options.skipClean {
                         allArtifacts.append(AnyArtifact(Artifact(

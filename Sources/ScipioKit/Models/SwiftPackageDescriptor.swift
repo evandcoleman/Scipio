@@ -12,9 +12,9 @@ import Workspace
 public struct SwiftPackageDescriptor: DependencyProducts {
 
     public let name: String
-    public let version: String = ""
+    public let version: String
     public let path: Path
-    public let buildables: [SwiftPackageBuildable] = []
+    public let buildables: [SwiftPackageBuildable]
 
     let toolchain: UserToolchain
     let workspace: Workspace
@@ -25,15 +25,11 @@ public struct SwiftPackageDescriptor: DependencyProducts {
         manifest.targets
     }
 
-    let observabilitySystem = ObservabilitySystem { _, diagnostics in
-        print("\(diagnostics.severity): \(diagnostics.message)")
-    }
-
     public var productNames: [String]? {
         return buildables.map(\.name)
     }
 
-    public init(path: Path, name: String) throws {
+    public init(path: Path, name: String, version: String, observabilityScope: ObservabilityScope) throws {
         self.name = name
         self.path = path
 
@@ -41,16 +37,17 @@ public struct SwiftPackageDescriptor: DependencyProducts {
         self.toolchain = try UserToolchain(destination: try .hostDestination())
         let loader = ManifestLoader(toolchain: self.toolchain)
         self.workspace = try Workspace(forRootPackage: root, customManifestLoader: loader)
-        self.graph = try workspace.loadPackageGraph(rootPath: root, observabilityScope: self.observabilitySystem.topScope)
+        self.graph = try workspace.loadPackageGraph(rootPath: root, observabilityScope: observabilityScope)
         let workspace = self.workspace
-        let scope = observabilitySystem.topScope
         self.manifest = try tsc_await {
             workspace.loadRootManifest(
                 at: root,
-                observabilityScope: scope,
+                observabilityScope: observabilityScope,
                 completion: $0
             )
         }
+        self.buildables = manifest.getBuildables()
+        self.version = version
     }
 
     public func version(for productName: String) -> String {
@@ -58,54 +55,21 @@ public struct SwiftPackageDescriptor: DependencyProducts {
     }
 }
 
-// MARK: - PackageManifest
-public struct PackageManifest: Codable, Equatable {
-    public let name: String
-    public let products: [Product]
-    public let targets: [Target]
-
-    public static func load(from path: Path, retry: Bool = true) throws -> PackageManifest {
-        precondition(path.isDirectory)
-        
-        let cachedManifestPath = Config.current.buildPath + "\(path.lastComponent)-\(try (path + "Package.swift").checksum(.sha256)).json"
-        let data: Data
-        if cachedManifestPath.exists {
-            log.verbose("Loading cached Package.swift for \(path.lastComponent)")
-            data = try cachedManifestPath.read()
-        } else {
-            log.verbose("Reading Package.swift for \(path.lastComponent)")
-            data = try xcrun("swift", "package", "dump-package", "--package-path", "\(path.string)")
-                .output()
-            try cachedManifestPath.write(data)
-        }
-        let decoder = JSONDecoder()
-
-        do {
-            return try decoder.decode(PackageManifest.self, from: data)
-        } catch {
-            try cachedManifestPath.delete()
-
-            if !retry {
-                throw error
-            }
-        }
-
-        return try load(from: path, retry: false)
-    }
+extension Manifest {
 
     public func getBuildables() -> [SwiftPackageBuildable] {
         return products
-            .filter { $0.type.library != nil }
+            .filter { $0.type.isLibrary }
             .flatMap { getBuildables(in: $0) }
             .uniqued()
     }
 
-    private func getBuildables(in product: Product) -> [SwiftPackageBuildable] {
+    private func getBuildables(in product: ProductDescription) -> [SwiftPackageBuildable] {
         let targets = recursiveTargets(in: product)
 
         return targets
             .compactMap { target -> SwiftPackageBuildable? in
-                let dependencies = target.dependencies.flatMap(\.names)
+                let dependencies = target.dependencies.map(\.name)
 
                 if target.type == .binary {
                     return .binaryTarget(target)
@@ -119,129 +83,50 @@ public struct PackageManifest: Codable, Equatable {
             }
     }
 
-    private func recursiveTargets(in product: Product) -> [PackageManifest.Target] {
+    private func recursiveTargets(in product: ProductDescription) -> [TargetDescription] {
         return product
             .targets
             .compactMap { target in targets.first { $0.name == target } }
             .flatMap { recursiveTargets(in: $0) }
     }
 
-    private func recursiveTargets(in target: Target) -> [PackageManifest.Target] {
+    private func recursiveTargets(in target: TargetDescription) -> [TargetDescription] {
         return [target] + target
             .dependencies
-            .flatMap { recursiveTargets(in: $0) }
+            .flatMap { recursiveTargets(in: $0, target: target) }
     }
 
-    private func recursiveTargets(in dependency: TargetDependency) -> [PackageManifest.Target] {
-        let byName = dependency.byName?.compactMap { $0?.name }
+    private func recursiveTargets(
+        in dependency: TargetDescription.Dependency,
+        target: TargetDescription
+    ) -> [TargetDescription] {
+        let resolvedTarget = targets.first { $0.name == dependency.name }
 
-        return (dependency.target?.compactMap({ $0?.name }) + byName)
-            .compactMap { target in targets.first { $0.name == target } }
-            .flatMap { recursiveTargets(in: $0) }
+        if let resolvedTarget {
+            return recursiveTargets(in: resolvedTarget)
+        }
+
+        return [target]
     }
 }
 
-extension PackageManifest {
+extension TargetDescription.Dependency {
 
-    public struct Product: Codable, Equatable, Hashable {
-        public let name: String
-        public let targets: [String]
-        public let type: TypeClass
-
-        public struct TypeClass: Codable, Equatable, Hashable {
-            public let library: [String]?
+    var name: String {
+        switch self {
+        case .byName(let name, _):
+            return name
+        case .target(let name, _):
+            return name
+        case .product(let name, _, _, _):
+            return name
         }
-    }
-
-    public struct Target: Codable, Equatable, Hashable {
-        public let dependencies: [TargetDependency]
-        public let name: String
-        public let path: String?
-        public let publicHeadersPath: String?
-        public let type: TargetType
-        public let checksum: String?
-        public let url: String?
-        public let settings: [Setting]?
-
-        public struct Setting: Codable, Equatable, Hashable {
-            public let name: Name?
-            public let value: [String]?
-
-            public enum Name: String, Codable, Equatable {
-                case define
-                case headerSearchPath
-                case linkedFramework
-                case linkedLibrary
-            }
-        }
-    }
-
-    public struct TargetDependency: Codable, Equatable, Hashable {
-        public let byName: [Dependency?]?
-        public let product: [Dependency?]?
-        public let target: [Dependency?]?
-
-        public var names: [String] {
-            return [byName, product, target]
-                .compactMap { $0 }
-                .flatMap { $0 }
-                .compactMap(\.?.name)
-        }
-
-        public enum Dependency: Codable, Equatable, Hashable {
-            case name(String)
-            case constraint(platforms: [String])
-
-            public var name: String? {
-                switch self {
-                case .name(let name):
-                    return name
-                case .constraint:
-                    return nil
-                }
-            }
-
-            enum CodingKeys: String, CodingKey {
-                case platformNames
-            }
-
-            public init(from decoder: Decoder) throws {
-                if let container = try? decoder.singleValueContainer(),
-                   let stringValue = try? container.decode(String.self) {
-
-                    self = .name(stringValue)
-                } else {
-                    let container = try decoder.container(keyedBy: CodingKeys.self)
-
-                    self = .constraint(platforms: try container.decode([String].self, forKey: .platformNames))
-                }
-            }
-
-            public func encode(to encoder: Encoder) throws {
-                switch self {
-                case .name(let name):
-                    var container = encoder.singleValueContainer()
-                    try container.encode(name)
-                case .constraint(let platforms):
-                    var container = encoder.container(keyedBy: CodingKeys.self)
-                    try container.encode(platforms, forKey: .platformNames)
-                }
-            }
-        }
-    }
-
-    public enum TargetType: String, Codable {
-        case binary
-        case regular
-        case test
-        case executable
-        case plugin
     }
 }
 
 public enum SwiftPackageBuildable: Equatable, Hashable {
     case target(String, buildName: String? = nil)
-    case binaryTarget(PackageManifest.Target)
+    case binaryTarget(TargetDescription)
 
     public var buildName: String {
         switch self {
@@ -266,6 +151,18 @@ public enum SwiftPackageBuildable: Equatable, Hashable {
             } else {
                 return target.name
             }
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .target(let name, let buildName):
+            hasher.combine("target")
+            hasher.combine(name)
+            hasher.combine(buildName)
+        case .binaryTarget(let target):
+            hasher.combine("binaryTarget")
+            hasher.combine(target.name)
         }
     }
 }

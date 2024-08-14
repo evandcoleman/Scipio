@@ -2,6 +2,13 @@ import Foundation
 import PathKit
 import ScipioKit
 
+import Basics
+
+let observabilitySystem = ObservabilitySystem { scope, diagnostics in
+    print("[\(scope.description)] \(diagnostics.severity): \(diagnostics.message)")
+}
+
+
 enum Runner {
 
     static func build(
@@ -10,6 +17,7 @@ enum Runner {
         force: Bool,
         skipClean: Bool
     ) async throws -> [AnyArtifact] {
+
         let processorOptions = ProcessorOptions(
             platforms: platforms,
             force: force,
@@ -20,7 +28,11 @@ enum Runner {
         var resolvedDependencies: [DependencyProducts] = []
 
         if let packages = Config.current.packages, !packages.isEmpty {
-            let processor = PackageProcessor(dependencies: packages, options: processorOptions)
+            let processor = PackageProcessor(
+                dependencies: packages,
+                options: processorOptions,
+                observabilityScope: observabilitySystem.topScope
+            )
             let filtered = dependencies?
                 .compactMap { name in packages.first { $0.name == name } }
             let (a, r) = try await processor.process(
@@ -32,7 +44,11 @@ enum Runner {
         }
 
         if let binaries = Config.current.binaries, !binaries.isEmpty {
-            let processor = BinaryProcessor(dependencies: binaries, options: processorOptions)
+            let processor = BinaryProcessor(
+                dependencies: binaries,
+                options: processorOptions,
+                observabilityScope: observabilitySystem.topScope
+            )
             let filtered = dependencies?
                 .compactMap { name in binaries.first { $0.name == name } }
             let (a, r) = try await processor.process(
@@ -44,7 +60,11 @@ enum Runner {
         }
 
         if let pods = Config.current.pods, !pods.isEmpty {
-            let processor = CocoaPodProcessor(dependencies: pods, options: processorOptions)
+            let processor = CocoaPodProcessor(
+                dependencies: pods,
+                options: processorOptions,
+                observabilityScope: observabilitySystem.topScope
+            )
             let filtered = dependencies?
                 .compactMap { name in pods.first { $0.name == name } }
             let (a, r) = try await processor.process(
@@ -63,13 +83,18 @@ enum Runner {
             .upload(artifacts, force: force, skipClean: skipClean)
     }
 
-    static func updatePackageManifest(at path: Path, with artifacts: [CachedArtifact], removeMissing: Bool) throws {
+    static func updatePackageManifest(
+        at path: Path,
+        with artifacts: [CachedArtifact],
+        removeMissing: Bool
+    ) throws {
         let packageFile = try SwiftPackageFile(
             name: Config.current.name,
             path: path,
             platforms: Config.current.platformVersions,
             artifacts: artifacts,
-            removeMissing: removeMissing
+            removeMissing: removeMissing,
+            observabilityScope: observabilitySystem.topScope
         )
 
         if packageFile.needsWrite(relativeTo: Config.current.packageRoot) {
