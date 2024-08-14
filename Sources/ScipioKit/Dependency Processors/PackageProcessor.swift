@@ -29,161 +29,191 @@ public final class PackageProcessor: DependencyProcessor {
         self.options = options
     }
 
-    public func preProcess() -> AnyPublisher<[SwiftPackageDescriptor], Error> {
-        return Future.try {
-            let projectPath = try self.writeProject()
+    public func preProcess() async throws -> [SwiftPackageDescriptor] {
+        let projectPath = try writeProject()
 
-            if !self.derivedDataPath.exists {
-                try self.derivedDataPath.mkpath()
-            }
-
-            try self.resolvePackageDependencies(in: projectPath, sourcePackagesPath: self.sourcePackagesPath)
-
-            return try self.readPackages(sourcePackagesPath: self.sourcePackagesPath)
+        if !derivedDataPath.exists {
+            try derivedDataPath.mkpath()
         }
-        .eraseToAnyPublisher()
+
+        try resolvePackageDependencies(in: projectPath, sourcePackagesPath: sourcePackagesPath)
+
+        return try readPackages(sourcePackagesPath: sourcePackagesPath)
     }
 
-    public func process(_ dependency: PackageDependency?, resolvedTo resolvedDependency: SwiftPackageDescriptor) -> AnyPublisher<[AnyArtifact], Error> {
-        return Future<([AnyArtifact], [AnyPublisher<AnyArtifact, Error>]), Error>.try {
+    public func process(
+        _ dependency: PackageDependency?,
+        resolvedTo resolvedDependency: SwiftPackageDescriptor
+    ) async throws -> [AnyArtifact] {
 
-            var xcFrameworks: [Artifact] = []
-            var downloads: [AnyPublisher<AnyArtifact, Error>] = []
-            var buildables = resolvedDependency.buildables
+        let path = try setupWorkingPath(for: resolvedDependency)
+        try preBuild(path: path)
+        let buildables = try getBuildables(dependency: resolvedDependency, path: path)
 
-            let path = try self.setupWorkingPath(for: resolvedDependency)
+        var xcFrameworks: [AnyArtifact] = []
+        var downloads: [() -> Task<AnyArtifact, Error>] = []
 
-            try self.preBuild(path: path)
+        for product in buildables {
+            if case .binaryTarget(let target) = product {
+                let (artifact, downloadTask) = try processBinaryTarget(
+                    buildable: product,
+                    target: target,
+                    dependency: resolvedDependency
+                )
 
-            let availableSchemes = try path.chdir {
-                let cmd = try xcrun("xcodebuild", "-list", "-json")
-                let output = try cmd.output()
-                let decoder = JSONDecoder()
-                return try decoder.decode(SchemesList.self, from: output)
-                    .workspace
-                    .schemes
-            }
-            if buildables.count == 1, case .target(let target, _) = buildables.first,
-               !availableSchemes.contains(target), let scheme = availableSchemes.first {
-
-                buildables = [.target(target, buildName: scheme)]
-            }
-
-            for product in buildables {
-                if case .binaryTarget(let target) = product {
-                    let targetPath = Config.current.buildPath + "\(target.name).xcframework"
-                    let artifact = Artifact(
-                        name: product.name,
-                        parentName: resolvedDependency.name,
-                        version: resolvedDependency.version,
-                        path: targetPath
-                    )
-
-                    if self.options.skipClean, targetPath.exists {
-                        xcFrameworks <<< artifact
-                        continue
-                    }
-
-                    if let urlString = target.url, let url = URL(string: urlString),
-                       let checksum = target.checksum {
-                        downloads <<< Future<Path, Error>.deferred { promise in
-                            let task = self.urlSession
-                                .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
-                                    if let error = error {
-                                        promise(.failure(error))
-                                    } else if let url = url {
-                                        promise(.success(Path(url.path)))
-                                    } else {
-                                        log.fatal("Unexpected download result")
-                                    }
-                                }
-
-                            log.info("Downloading \(url.lastPathComponent):")
-
-                            task.resume()
-                        }
-                        .tryMap { downloadPath -> AnyArtifact in
-                            let zipPath = Config.current.buildPath + url.lastPathComponent
-
-                            if zipPath.exists {
-                                try zipPath.delete()
-                            }
-
-                            try downloadPath.copy(zipPath)
-
-                            guard try zipPath.checksum(.sha256) == checksum else {
-                                throw ScipioError.checksumMismatch(product: product.name)
-                            }
-
-                            if targetPath.exists {
-                                try targetPath.delete()
-                            }
-
-                            log.info("Decompressing \(zipPath.lastComponent):")
-
-                            var unzippedPath: Path? = nil
-                            try Zip.unzipFile(zipPath.url, destination: targetPath.parent().url, overwrite: true, password: nil, progress: { log.progress(percent: $0) }, fileOutputHandler: { unzippedFile in
-                                if unzippedPath == nil {
-                                    if unzippedFile.pathExtension == "xcframework" {
-                                        unzippedPath = Path(unzippedFile.path)
-                                    } else if
-                                        let children = try? Path(unzippedFile.path()).children(),
-                                        let frameworkChild = children.first(where: { $0.extension == "xcframework" })
-                                    {
-                                        unzippedPath = frameworkChild
-                                    }
-                                }
-                            })
-                            if let unzippedPath, unzippedPath != targetPath {
-                                try unzippedPath.move(targetPath)
-                            }
-                            if unzippedPath == nil {
-                                log.error("Couldn't find xcframework in archive: \(zipPath)")
-                            }
-
-                            return AnyArtifact(artifact)
-                        }
-                        .eraseToAnyPublisher()
-                    } else if let targetPath = target.path {
-                        let fullPath = resolvedDependency.path + Path(targetPath)
-                        let targetPath = Config.current.buildPath + fullPath.lastComponent
-
-                        if targetPath.exists {
-                            try targetPath.delete()
-                        }
-
-                        try fullPath.copy(targetPath)
-
-                        xcFrameworks <<< artifact
-                    }
+                if let downloadTask {
+                    downloads.append(downloadTask)
                 } else {
-                    xcFrameworks <<< try self.buildAndExport(
+                    xcFrameworks.append(AnyArtifact(artifact))
+                }
+            } else {
+                xcFrameworks.append(
+                    contentsOf: try buildAndExport(
                         buildable: product,
                         package: resolvedDependency,
                         dependency: dependency,
                         path: path
+                    ).map(AnyArtifact.init)
+                )
+            }
+        }
+
+        for downloadTask in downloads {
+            xcFrameworks.append(try await downloadTask().value)
+        }
+
+        return xcFrameworks
+    }
+
+    public func postProcess() async throws {}
+
+    private func getBuildables(dependency: SwiftPackageDescriptor, path: Path) throws -> [SwiftPackageBuildable] {
+        var buildables = dependency.buildables
+
+        let availableSchemes = try path.chdir {
+            let cmd = try xcrun("xcodebuild", "-list", "-json")
+            let output = try cmd.output()
+            let decoder = JSONDecoder()
+            return try decoder.decode(SchemesList.self, from: output)
+                .workspace
+                .schemes
+        }
+        if buildables.count == 1, case .target(let target, _) = buildables.first,
+           !availableSchemes.contains(target), let scheme = availableSchemes.first {
+
+            buildables = [.target(target, buildName: scheme)]
+        }
+
+        return buildables
+    }
+
+    private func processBinaryTarget(
+        buildable: SwiftPackageBuildable,
+        target: PackageManifest.Target,
+        dependency: SwiftPackageDescriptor
+    ) throws -> (Artifact, (() -> Task<AnyArtifact, Error>)?) {
+        let targetPath = Config.current.buildPath + "\(target.name).xcframework"
+        let artifact = Artifact(
+            name: buildable.name,
+            parentName: dependency.name,
+            version: dependency.version,
+            path: targetPath
+        )
+
+        if self.options.skipClean, targetPath.exists {
+            return (artifact, nil)
+        }
+
+        if 
+            let urlString = target.url,
+            let url = URL(string: urlString),
+            let checksum = target.checksum
+        {
+            let downloadTask = {
+                Task.detached {
+                    let downloadPath: Path = try await withCheckedThrowingContinuation { continuation in
+                        let task = self.urlSession
+                            .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
+                                if let error = error {
+                                    continuation.resume(throwing: error)
+                                } else if let url = url {
+                                    continuation.resume(returning: Path(url.path))
+                                } else {
+                                    log.fatal("Unexpected download result")
+                                }
+                            }
+
+                        log.info("Downloading \(url.lastPathComponent):")
+
+                        task.resume()
+                    }
+
+                    let zipPath = Config.current.buildPath + url.lastPathComponent
+
+                    if zipPath.exists {
+                        try zipPath.delete()
+                    }
+
+                    try downloadPath.copy(zipPath)
+
+                    guard try zipPath.checksum(.sha256) == checksum else {
+                        throw ScipioError.checksumMismatch(product: buildable.name)
+                    }
+
+                    if targetPath.exists {
+                        try targetPath.delete()
+                    }
+
+                    log.info("Decompressing \(zipPath.lastComponent):")
+
+                    var unzippedPath: Path? = nil
+                    try Zip.unzipFile(
+                        zipPath.url,
+                        destination: targetPath.parent().url,
+                        overwrite: true,
+                        password: nil,
+                        progress: { log.progress(percent: $0) },
+                        fileOutputHandler: { unzippedFile in
+                            if unzippedPath == nil {
+                                if unzippedFile.pathExtension == "xcframework" {
+                                    unzippedPath = Path(unzippedFile.path)
+                                } else if
+                                    let children = try? Path(unzippedFile.path()).children(),
+                                    let frameworkChild = children.first(where: { $0.extension == "xcframework" })
+                                {
+                                    unzippedPath = frameworkChild
+                                }
+                            }
+                        }
                     )
+
+                    if let unzippedPath, unzippedPath != targetPath {
+                        try unzippedPath.move(targetPath)
+                    }
+
+                    if unzippedPath == nil {
+                        log.error("Couldn't find xcframework in archive: \(zipPath)")
+                    }
+
+                    return AnyArtifact(artifact)
                 }
             }
 
-            return (xcFrameworks.map { AnyArtifact($0) }, downloads)
-        }
-        .flatMap { frameworks, downloads -> AnyPublisher<[AnyArtifact], Error> in
-            return downloads
-                .publisher
-                .setFailureType(to: Error.self)
-                .flatMap(maxPublishers: .max(1)) { $0 }
-                .collect()
-                .map { frameworks + $0 }
-                .eraseToAnyPublisher()
-        }
-        .eraseToAnyPublisher()
-    }
+            return (artifact, downloadTask)
+        } else if let targetPath = target.path {
+            let fullPath = dependency.path + Path(targetPath)
+            let targetPath = Config.current.buildPath + fullPath.lastComponent
 
-    public func postProcess() -> AnyPublisher<(), Error> {
-        return Just(())
-            .setFailureType(to: Error.self)
-            .eraseToAnyPublisher()
+            if targetPath.exists {
+                try targetPath.delete()
+            }
+
+            try fullPath.copy(targetPath)
+
+            return (artifact, nil)
+        } else {
+            fatalError()
+        }
     }
 
     private func writeProject() throws -> Path {

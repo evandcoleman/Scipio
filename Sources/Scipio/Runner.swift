@@ -4,7 +4,12 @@ import ScipioKit
 
 enum Runner {
 
-    static func build(dependencies: [String]?, platforms: [Platform], force: Bool, skipClean: Bool) throws -> [AnyArtifact] {
+    static func build(
+        dependencies: [String]?,
+        platforms: [Platform],
+        force: Bool,
+        skipClean: Bool
+    ) async throws -> [AnyArtifact] {
         let processorOptions = ProcessorOptions(
             platforms: platforms,
             force: force,
@@ -18,7 +23,10 @@ enum Runner {
             let processor = PackageProcessor(dependencies: packages, options: processorOptions)
             let filtered = dependencies?
                 .compactMap { name in packages.first { $0.name == name } }
-            let (a, r) = try processor.process(dependencies: filtered, accumulatedResolvedDependencies: resolvedDependencies).wait() ?? ([], [])
+            let (a, r) = try await processor.process(
+                dependencies: filtered,
+                accumulatedResolvedDependencies: resolvedDependencies
+            )
             artifacts <<< a
             resolvedDependencies <<< r
         }
@@ -27,7 +35,10 @@ enum Runner {
             let processor = BinaryProcessor(dependencies: binaries, options: processorOptions)
             let filtered = dependencies?
                 .compactMap { name in binaries.first { $0.name == name } }
-            let (a, r) = try processor.process(dependencies: filtered, accumulatedResolvedDependencies: resolvedDependencies).wait() ?? ([], [])
+            let (a, r) = try await processor.process(
+                dependencies: filtered,
+                accumulatedResolvedDependencies: resolvedDependencies
+            )
             artifacts <<< a
             resolvedDependencies <<< r
         }
@@ -36,7 +47,10 @@ enum Runner {
             let processor = CocoaPodProcessor(dependencies: pods, options: processorOptions)
             let filtered = dependencies?
                 .compactMap { name in pods.first { $0.name == name } }
-            let (a, r) = try processor.process(dependencies: filtered, accumulatedResolvedDependencies: resolvedDependencies).wait() ?? ([], [])
+            let (a, r) = try await processor.process(
+                dependencies: filtered,
+                accumulatedResolvedDependencies: resolvedDependencies
+            )
             artifacts <<< a
             resolvedDependencies <<< r
         }
@@ -44,10 +58,9 @@ enum Runner {
         return artifacts
     }
 
-    static func upload(artifacts: [AnyArtifact], force: Bool, skipClean: Bool) throws -> [CachedArtifact] {
-        return try Config.current.cacheDelegator
+    static func upload(artifacts: [AnyArtifact], force: Bool, skipClean: Bool) async throws -> [CachedArtifact] {
+        return try await Config.current.cacheDelegator
             .upload(artifacts, force: force, skipClean: skipClean)
-            .wait() ?? []
     }
 
     static func updatePackageManifest(at path: Path, with artifacts: [CachedArtifact], removeMissing: Bool) throws {

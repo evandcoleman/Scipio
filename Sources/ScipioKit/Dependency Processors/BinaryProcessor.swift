@@ -15,161 +15,146 @@ public final class BinaryProcessor: DependencyProcessor {
         self.options = options
     }
 
-    public func preProcess() -> AnyPublisher<[BinaryDependency], Error> {
+    public func preProcess() async throws -> [BinaryDependency] {
         log.info("🔗  Processing binary dependencies...")
 
-        return Just(dependencies)
-            .setFailureType(to: Error.self)
-            .eraseToAnyPublisher()
+        return dependencies
     }
 
-    public func process(_ dependency: BinaryDependency?, resolvedTo resolvedDependency: BinaryDependency) -> AnyPublisher<[AnyArtifact], Error> {
-        return Just(dependency)
-            .setFailureType(to: Error.self)
-            .tryFlatMap { dependency -> AnyPublisher<(BinaryDependency, Path), Error> in
-                let downloadPath = Config.current.buildPath + resolvedDependency.url.lastPathComponent
-                let checksumCache = Config.current.buildPath + ".binary-\(resolvedDependency.name)-\(resolvedDependency.version)"
+    public func process(
+        _ dependency: BinaryDependency?,
+        resolvedTo resolvedDependency: BinaryDependency
+    ) async throws -> [AnyArtifact] {
+        let decompressedPath = try await getDecompressedPath(dependency: resolvedDependency)
+        let artifacts = try getArtifacts(dependency: resolvedDependency, path: decompressedPath)
 
-                if downloadPath.exists, checksumCache.exists,
-                   try downloadPath.checksum(.sha256) == (try checksumCache.read()) {
-
-                    return Just(downloadPath)
-                        .setFailureType(to: Error.self)
-                        .tryFlatMap { path in
-                            return Future.try {
-                                return try self.decompress(dependency: resolvedDependency, at: path)
-                            }
-                            .catch { error -> AnyPublisher<Path, Error> in
-                                log.verbose("Error decompressing, will delete and download again: \(error)")
-
-                                return self.downloadAndDecompress(resolvedDependency, path: downloadPath, checksumCache: checksumCache)
-                            }
-                        }
-                        .map { (resolvedDependency, $0) }
-                        .eraseToAnyPublisher()
-                } else {
-                    return self.downloadAndDecompress(resolvedDependency, path: downloadPath, checksumCache: checksumCache)
-                        .map { (resolvedDependency, $0) }
-                        .eraseToAnyPublisher()
+        let filtered: [Artifact] = artifacts
+            .reduce(into: []) { acc, next in
+                if !acc.contains(where: { $0.name == next.name }) {
+                    acc.append(next)
                 }
             }
-            .tryMap { dependency, path -> [AnyArtifact] in
-                let xcFrameworks = try path
-                    .recursiveChildren()
-                    .filter { $0.extension == "xcframework" }
-                    .compactMap { framework -> AnyArtifact? in
-                        let targetPath = Config.current.buildPath + framework.lastComponent
 
-                        if targetPath.exists {
-                            try targetPath.delete()
-                        }
+        try resolvedDependency.cache(filtered.map(\.name))
 
-                        if let excludes = dependency.excludes,
-                           excludes.contains(framework.lastComponentWithoutExtension) {
-
-                            return nil
-                        }
-
-                        try framework.copy(targetPath)
-
-                        return AnyArtifact(Artifact(
-                            name: targetPath.lastComponentWithoutExtension,
-                            parentName: dependency.name,
-                            version: dependency.version,
-                            path: targetPath
-                        ))
-                    }
-
-                if xcFrameworks.isEmpty {
-                    return try path
-                        .recursiveChildren()
-                        .filter { $0.extension == "framework" }
-                        .compactMap { framework -> AnyArtifact? in
-                            let targetPath = Config.current.buildPath + "\(framework.lastComponentWithoutExtension).xcframework"
-
-                            if targetPath.exists {
-                                try targetPath.delete()
-                            }
-
-                            if let excludes = dependency.excludes,
-                               excludes.contains(framework.lastComponentWithoutExtension) {
-
-                                return nil
-                            }
-
-                            _ = try self.convertUniversalFrameworkToXCFramework(input: framework)
-
-                            return AnyArtifact(Artifact(
-                                name: targetPath.lastComponentWithoutExtension,
-                                parentName: dependency.name,
-                                version: dependency.version,
-                                path: targetPath
-                            ))
-                        }
-                }
-
-                return xcFrameworks
-            }
-            .collect()
-            .map { $0.flatMap { $0 } }
-            .tryMap { artifacts in
-                let filtered: [AnyArtifact] = artifacts
-                    .reduce(into: []) { acc, next in
-                        if !acc.contains(where: { $0.name == next.name }) {
-                            acc.append(next)
-                        }
-                    }
-
-                try resolvedDependency.cache(filtered.map(\.name))
-
-                return filtered
-            }
-            .eraseToAnyPublisher()
+        return filtered.map(AnyArtifact.init)
     }
 
-    public func postProcess() -> AnyPublisher<(), Error> {
-        return Just(())
-            .setFailureType(to: Error.self)
-            .eraseToAnyPublisher()
-    }
+    private func getDecompressedPath(dependency: BinaryDependency) async throws -> Path {
+        let downloadPath = Config.current.buildPath + dependency.url.lastPathComponent
+        let checksumCache = Config.current.buildPath + ".binary-\(dependency.name)-\(dependency.version)"
 
-    private func downloadAndDecompress(_ dependency: BinaryDependency, path: Path, checksumCache: Path) -> AnyPublisher<Path, Error> {
-        return Future<Path, Error>.try {
-            if path.exists {
-                try path.delete()
+        if downloadPath.exists, checksumCache.exists,
+           try downloadPath.checksum(.sha256) == (try checksumCache.read()) {
+
+            do {
+                return try self.decompress(dependency: dependency, at: downloadPath)
+            } catch {
+                log.verbose("Error decompressing, will delete and download again: \(error)")
+
+                return try await downloadAndDecompress(dependency, path: downloadPath, checksumCache: checksumCache)
             }
-
-            return path
+        } else {
+            return try await downloadAndDecompress(
+                dependency,
+                path: downloadPath,
+                checksumCache: checksumCache
+            )
         }
-        .flatMap { _ -> AnyPublisher<Path, Error> in
-            return self.download(dependency: dependency)
-                .tryMap { path in
-                    return try self.decompress(dependency: dependency, at: path)
-                }
-                .handleEvents(receiveOutput: { _ in
-                    do {
-                        try checksumCache.write(try path.checksum(.sha256))
-                    } catch {
-                        log.debug("Failed to write checksum cache for \(path)")
-                    }
-                })
-                .eraseToAnyPublisher()
-        }
-        .eraseToAnyPublisher()
     }
 
-    private func download(dependency: BinaryDependency) -> AnyPublisher<Path, Error> {
+    private func getArtifacts(dependency: BinaryDependency, path: Path) throws -> [Artifact] {
+        let xcFrameworks = try path
+            .recursiveChildren()
+            .filter { $0.extension == "xcframework" }
+            .compactMap { framework -> Artifact? in
+                let targetPath = Config.current.buildPath + framework.lastComponent
+
+                if targetPath.exists {
+                    try targetPath.delete()
+                }
+
+                if let excludes = dependency.excludes,
+                   excludes.contains(framework.lastComponentWithoutExtension) {
+
+                    return nil
+                }
+
+                try framework.copy(targetPath)
+
+                return Artifact(
+                    name: targetPath.lastComponentWithoutExtension,
+                    parentName: dependency.name,
+                    version: dependency.version,
+                    path: targetPath
+                )
+            }
+
+        if xcFrameworks.isEmpty {
+            return try path
+                .recursiveChildren()
+                .filter { $0.extension == "framework" }
+                .compactMap { framework -> Artifact? in
+                    let targetPath = Config.current.buildPath + "\(framework.lastComponentWithoutExtension).xcframework"
+
+                    if targetPath.exists {
+                        try targetPath.delete()
+                    }
+
+                    if let excludes = dependency.excludes,
+                       excludes.contains(framework.lastComponentWithoutExtension) {
+
+                        return nil
+                    }
+
+                    _ = try self.convertUniversalFrameworkToXCFramework(input: framework)
+
+                    return Artifact(
+                        name: targetPath.lastComponentWithoutExtension,
+                        parentName: dependency.name,
+                        version: dependency.version,
+                        path: targetPath
+                    )
+                }
+        }
+
+        return xcFrameworks
+    }
+
+    public func postProcess() async throws {}
+
+    private func downloadAndDecompress(
+        _ dependency: BinaryDependency,
+        path: Path,
+        checksumCache: Path
+    ) async throws -> Path {
+        if path.exists {
+            try path.delete()
+        }
+        let downloadPath = try await download(dependency: dependency)
+        let decompressedPath = try decompress(dependency: dependency, at: downloadPath)
+
+        do {
+            try checksumCache.write(try path.checksum(.sha256))
+        } catch {
+            log.debug("Failed to write checksum cache for \(path)")
+        }
+
+        return decompressedPath
+    }
+
+    private func download(dependency: BinaryDependency) async throws -> Path {
         let url = dependency.url
         let targetPath = Config.current.buildPath + Path(url.path).lastComponentWithoutExtension
         let targetRawPath = Config.current.buildPath + url.lastPathComponent
 
-        return Future<URL, Error> { promise in
+        let downloadUrl: URL = try await withCheckedThrowingContinuation { continuation in
             let task = self.urlSession
                 .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
                     if let error = error {
-                        promise(.failure(error))
+                        continuation.resume(throwing: error)
                     } else if let url = url {
-                        promise(.success(url))
+                        continuation.resume(returning: url)
                     } else {
                         log.fatal("Unexpected download result")
                     }
@@ -179,21 +164,19 @@ public final class BinaryProcessor: DependencyProcessor {
 
             task.resume()
         }
-        .tryMap { downloadUrl -> Path in
-            if targetPath.exists {
-                try targetPath.delete()
-            }
-            if targetRawPath.exists {
-                try targetRawPath.delete()
-            }
 
-            let downloadedPath = Path(downloadUrl.path)
-
-            try downloadedPath.move(targetRawPath)
-
-            return targetRawPath
+        if targetPath.exists {
+            try targetPath.delete()
         }
-        .eraseToAnyPublisher()
+        if targetRawPath.exists {
+            try targetRawPath.delete()
+        }
+
+        let downloadedPath = Path(downloadUrl.path)
+
+        try downloadedPath.move(targetRawPath)
+
+        return targetRawPath
     }
 
     private func decompress(dependency: BinaryDependency, at path: Path) throws -> Path {

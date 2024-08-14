@@ -38,37 +38,47 @@ extension HTTPCacheEngineProtocol {
         return request
     }
 
-    public func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
+    public func exists(product: String, version: String) async throws -> Bool {
         var request = URLRequest(url: downloadUrl(for: product, version: version))
         request.httpMethod = "HEAD"
 
-        return urlSession
-            .dataTaskPublisher(for: request)
-            .map { (($0.response as? HTTPURLResponse)?.statusCode ?? 500) < 400 }
-            .mapError { $0 as Error }
-            .eraseToAnyPublisher()
+        let (_, response) = try await urlSession
+            .data(for: request)
+
+        return ((response as? HTTPURLResponse)?.statusCode ?? 500) < 400
     }
 
-    public func put(artifact: CompressedArtifact) -> AnyPublisher<CachedArtifact, Error> {
-        return Future { promise in
-            let request = uploadUrlRequest(url: uploadUrl(for: artifact.name, version: artifact.version))
+    public func put(artifact: CompressedArtifact) async throws -> CachedArtifact {
+        let request = uploadUrlRequest(url: uploadUrl(for: artifact.name, version: artifact.version))
 
+        return try await withCheckedThrowingContinuation { continuation in
             let task = urlSession
-                .uploadTask(with: request, fromFile: artifact.path.url, progressHandler: { log.progress(percent: $0) }) { data, response, error in
+                .uploadTask(
+                    with: request,
+                    fromFile: artifact.path.url,
+                    progressHandler: { log.progress(percent: $0) }
+                ) { data, response, error in
                     if let error = error {
-                        promise(.failure(error))
+                        continuation.resume(throwing: error)
                     } else if let statusCode = (response as? HTTPURLResponse)?.statusCode, statusCode >= 400 {
-                        promise(.failure(HTTPCacheEngineError.requestFailed(statusCode: statusCode, body: String(data: data ?? Data(), encoding: .utf8) ?? "")))
+                        continuation.resume(
+                            throwing: HTTPCacheEngineError.requestFailed(
+                                statusCode: statusCode,
+                                body: String(data: data ?? Data(), encoding: .utf8) ?? ""
+                            )
+                        )
                     } else {
                         do {
-                            promise(.success(try CachedArtifact(
-                                name: artifact.name,
-                                parentName: artifact.parentName,
-                                url: downloadUrl(for: artifact.name, version: artifact.version),
-                                localPath: artifact.path
-                            )))
+                            continuation.resume(
+                                returning: try CachedArtifact(
+                                    name: artifact.name,
+                                    parentName: artifact.parentName,
+                                    url: downloadUrl(for: artifact.name, version: artifact.version),
+                                    localPath: artifact.path
+                                )
+                            )
                         } catch {
-                            promise(.failure(error))
+                            continuation.resume(throwing: error)
                         }
                     }
                 }
@@ -77,23 +87,30 @@ extension HTTPCacheEngineProtocol {
 
             task.resume()
         }
-        .eraseToAnyPublisher()
     }
 
-    public func get(product: String, in parentName: String, version: String, destination: Path) -> AnyPublisher<CompressedArtifact, Error> {
-        return Future<URL, Error> { promise in
+    public func get(
+        product: String,
+        in parentName: String,
+        version: String,
+        destination: Path
+    ) async throws -> CompressedArtifact {
+        let url: URL = try await withCheckedThrowingContinuation { continuation in
             let url = downloadUrl(for: product, version: version)
 
             let task = urlSession
-                .downloadTask(with: url, progressHandler: { log.progress(percent: $0) }) { url, response, error in
+                .downloadTask(
+                    with: url,
+                    progressHandler: { log.progress(percent: $0) }
+                ) { url, response, error in
                     if let error = error {
-                        promise(.failure(error))
+                        continuation.resume(throwing: error)
                     } else if let statusCode = (response as? HTTPURLResponse)?.statusCode, statusCode >= 400 {
-                        promise(.failure(HTTPCacheEngineError.requestFailed(statusCode: statusCode)))
-                    } else if let url = url {
-                        promise(.success(url))
+                        continuation.resume(throwing: HTTPCacheEngineError.requestFailed(statusCode: statusCode))
+                    } else if let url {
+                        continuation.resume(returning: url)
                     } else {
-                        promise(.failure(HTTPCacheEngineError.downloadFailed))
+                        continuation.resume(throwing: HTTPCacheEngineError.downloadFailed)
                     }
                 }
 
@@ -101,21 +118,19 @@ extension HTTPCacheEngineProtocol {
 
             task.resume()
         }
-        .tryMap { url in
-            if destination.exists {
-                try destination.delete()
-            }
 
-            try Path(url.path).copy(destination)
-
-            return CompressedArtifact(
-                name: product,
-                parentName: parentName,
-                version: version,
-                path: destination.isDirectory ? destination + url.lastPathComponent : destination
-            )
+        if destination.exists {
+            try destination.delete()
         }
-        .eraseToAnyPublisher()
+
+        try Path(url.path).copy(destination)
+
+        return CompressedArtifact(
+            name: product,
+            parentName: parentName,
+            version: version,
+            path: destination.isDirectory ? destination + url.lastPathComponent : destination
+        )
     }
 
     public func url(for product: String, version: String, baseUrl: URL) -> URL {

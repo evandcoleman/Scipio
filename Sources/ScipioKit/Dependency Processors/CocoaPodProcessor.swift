@@ -32,90 +32,83 @@ public final class CocoaPodProcessor: DependencyProcessor {
         self.options = options
     }
 
-    public func preProcess() -> AnyPublisher<[CocoaPodDescriptor], Error> {
-        return Future.try {
-            let path = Config.current.buildPath
+    public func preProcess() async throws -> [CocoaPodDescriptor] {
+        let path = Config.current.buildPath
 
-            let (_, projectPath) = try self.writePodfile(in: path)
+        let (_, projectPath) = try writePodfile(in: path)
 
-            return try self.installPods(in: path, projectPath: projectPath)
-        }
-        .eraseToAnyPublisher()
+        return try installPods(in: path, projectPath: projectPath)
     }
 
-    public func process(_ dependency: CocoaPodDependency?, resolvedTo resolvedDependency: CocoaPodDescriptor) -> AnyPublisher<[AnyArtifact], Error> {
-        return Future.try {
-            var paths = try self.options.platforms.flatMap { platform -> [Path] in
-                let archivePaths = try platform.sdks.map { sdk -> Path in
-                    let scheme = "\(resolvedDependency.name)-\(platform.rawValue)"
+    public func process(
+        _ dependency: CocoaPodDependency?,
+        resolvedTo resolvedDependency: CocoaPodDescriptor
+    ) async throws -> [AnyArtifact] {
+        var paths = try self.options.platforms.flatMap { platform -> [Path] in
+            let archivePaths = try platform.sdks.map { sdk -> Path in
+                let scheme = "\(resolvedDependency.name)-\(platform.rawValue)"
 
-                    if self.options.skipClean, Xcode.getArchivePath(for: scheme, sdk: sdk).exists {
-                        return Xcode.getArchivePath(for: scheme, sdk: sdk)
-                    }
-
-                    return try Xcode.archive(
-                        scheme: scheme,
-                        in: self.projectPath.parent() + "\(self.projectPath.lastComponentWithoutExtension).xcworkspace",
-                        for: sdk,
-                        additionalBuildSettings: dependency?.additionalBuildSettings
-                    )
+                if self.options.skipClean, Xcode.getArchivePath(for: scheme, sdk: sdk).exists {
+                    return Xcode.getArchivePath(for: scheme, sdk: sdk)
                 }
 
-                return try Xcode.createXCFramework(
-                    archivePaths: archivePaths,
-                    skipIfExists: self.options.skipClean,
-                    filter: { !$0.hasPrefix("Pods_") && $0 != "\(resolvedDependency.name)-\(platform.rawValue)" && resolvedDependency.productNames?.contains($0) == true }
+                return try Xcode.archive(
+                    scheme: scheme,
+                    in: self.projectPath.parent() + "\(self.projectPath.lastComponentWithoutExtension).xcworkspace",
+                    for: sdk,
+                    additionalBuildSettings: dependency?.additionalBuildSettings
                 )
             }
 
-            let vendoredFrameworks = try resolvedDependency
-                .vendoredFrameworks
-                .filter { dependency?.excludes?.contains($0.lastComponentWithoutExtension) != true }
-                .map { path -> Path in
-                    let targetPath = Config.current.buildPath + path.lastComponent
+            return try Xcode.createXCFramework(
+                archivePaths: archivePaths,
+                skipIfExists: self.options.skipClean,
+                filter: { !$0.hasPrefix("Pods_") && $0 != "\(resolvedDependency.name)-\(platform.rawValue)" && resolvedDependency.productNames?.contains($0) == true }
+            )
+        }
 
-                    if targetPath.exists, !self.options.skipClean {
-                        try targetPath.delete()
-                    }
+        let vendoredFrameworks = try resolvedDependency
+            .vendoredFrameworks
+            .filter { dependency?.excludes?.contains($0.lastComponentWithoutExtension) != true }
+            .map { path -> Path in
+                let targetPath = Config.current.buildPath + path.lastComponent
 
-                    if !targetPath.exists {
-                        try path.copy(targetPath)
-
-                        if !resolvedDependency.resourceBundles.isEmpty {
-                            let resourcesPath = targetPath + "Resources"
-
-                            if !resourcesPath.exists {
-                                try resourcesPath.mkdir()
-                            }
-
-                            for bundlePath in resolvedDependency.resourceBundles {
-                                try bundlePath.copy(resourcesPath + bundlePath.lastComponent)
-                            }
-                        }
-                    }
-
-                    return targetPath
+                if targetPath.exists, !self.options.skipClean {
+                    try targetPath.delete()
                 }
 
-            paths <<< vendoredFrameworks
+                if !targetPath.exists {
+                    try path.copy(targetPath)
 
-            return paths.compactMap { path in
-                return AnyArtifact(Artifact(
-                    name: path.lastComponentWithoutExtension,
-                    parentName: resolvedDependency.name,
-                    version: resolvedDependency.version(for: path.lastComponentWithoutExtension),
-                    path: path
-                ))
+                    if !resolvedDependency.resourceBundles.isEmpty {
+                        let resourcesPath = targetPath + "Resources"
+
+                        if !resourcesPath.exists {
+                            try resourcesPath.mkdir()
+                        }
+
+                        for bundlePath in resolvedDependency.resourceBundles {
+                            try bundlePath.copy(resourcesPath + bundlePath.lastComponent)
+                        }
+                    }
+                }
+
+                return targetPath
             }
+
+        paths <<< vendoredFrameworks
+
+        return paths.compactMap { path in
+            return AnyArtifact(Artifact(
+                name: path.lastComponentWithoutExtension,
+                parentName: resolvedDependency.name,
+                version: resolvedDependency.version(for: path.lastComponentWithoutExtension),
+                path: path
+            ))
         }
-        .eraseToAnyPublisher()
     }
 
-    public func postProcess() -> AnyPublisher<(), Error> {
-        return Just(())
-            .setFailureType(to: Error.self)
-            .eraseToAnyPublisher()
-    }
+    public func postProcess() async throws {}
 
     private func writePodfile(in path: Path) throws -> (podfilePath: Path, projectPath: Path) {
         let podfilePath = path + "Podfile"

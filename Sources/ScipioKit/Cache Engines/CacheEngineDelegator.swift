@@ -48,38 +48,39 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
         return cache.downloadUrl(for: product, version: version)
     }
 
-    public func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
+    public func exists(product: String, version: String) async throws -> Bool {
         if let exists = existsCache[[product, version].joined(separator: "-")] {
-            return Just(exists)
-                .setFailureType(to: Error.self)
-                .eraseToAnyPublisher()
+            return exists
         }
 
         log.verbose("Checking if \(product)-\(version) exists")
 
-        return cache.exists(product: product, version: version)
-            .handleEvents(receiveOutput: { exists in
-                self.existsCache[[product, version].joined(separator: "-")] = exists
-            })
-            .eraseToAnyPublisher()
+        let exists = try await cache.exists(product: product, version: version)
+        existsCache[[product, version].joined(separator: "-")] = exists
+
+        return exists
     }
 
-    public func get(product: String, in parentName: String, version: String, destination: Path) -> AnyPublisher<AnyArtifact, Error> {
+    public func get(product: String, in parentName: String, version: String, destination: Path) async throws -> AnyArtifact {
         log.verbose("Fetching \(product)-\(version)")
 
         let normalizedDestination = cache.requiresCompression && destination.extension != "zip" ? destination.parent() + "\(destination.lastComponent).zip" : destination
 
-        return Future<AnyArtifact?, Error>.try {
-            if normalizedDestination.exists, self.versionCachePath(for: product, version: version).exists, try normalizedDestination.checksum(.sha256) == (try self.versionCachePath(for: product, version: version).read()) {
+        let artifact: AnyArtifact? =
+            if
+                normalizedDestination.exists,
+                self.versionCachePath(for: product, version: version).exists,
+                try normalizedDestination.checksum(.sha256) == (try self.versionCachePath(for: product, version: version).read())
+            {
                 if self.cache.requiresCompression {
-                    return AnyArtifact(CompressedArtifact(
+                    AnyArtifact(CompressedArtifact(
                         name: product,
                         parentName: parentName,
                         version: version,
                         path: normalizedDestination
                     ))
                 } else {
-                    return AnyArtifact(Artifact(
+                    AnyArtifact(Artifact(
                         name: product,
                         parentName: parentName,
                         version: version,
@@ -87,44 +88,33 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
                     ))
                 }
             } else {
-                return nil
+                nil
             }
-        }
-        .flatMap { artifact -> AnyPublisher<AnyArtifact, Error> in
-            if let artifact = artifact {
-                return Just(artifact)
-                    .setFailureType(to: Error.self)
-                    .eraseToAnyPublisher()
+
+            if let artifact {
+                return artifact
             } else {
-                return self.cache
-                    .get(product: product, in: parentName, version: version, destination: normalizedDestination)
-                    .tryMap { artifact in
-                        if artifact.path.exists, artifact.path.isFile {
-                            try self.versionCachePath(for: artifact.name, version: artifact.version)
-                                .write(artifact.path.checksum(.sha256))
-                        }
-
-                        return artifact
-                    }
-                    .eraseToAnyPublisher()
-            }
-        }
-        .eraseToAnyPublisher()
-    }
-
-    public func put(artifact: AnyArtifact) -> AnyPublisher<CachedArtifact, Error> {
-        log.verbose("Caching \(artifact.name)-\(artifact.version)")
-
-        return cache.put(artifact: artifact)
-            .tryMap { cachedArtifact in
-                if artifact.path.isFile {
+                let artifact = AnyArtifact(try await self.cache
+                    .get(product: product, in: parentName, version: version, destination: normalizedDestination))
+                if artifact.path.exists, artifact.path.isFile {
                     try self.versionCachePath(for: artifact.name, version: artifact.version)
                         .write(artifact.path.checksum(.sha256))
                 }
 
-                return cachedArtifact
+                return artifact
             }
-            .eraseToAnyPublisher()
+    }
+
+    public func put(artifact: AnyArtifact) async throws -> CachedArtifact {
+        log.verbose("Caching \(artifact.name)-\(artifact.version)")
+
+        let cachedArtifact = try await cache.put(artifact: artifact)
+        if artifact.path.isFile {
+            try self.versionCachePath(for: artifact.name, version: artifact.version)
+                .write(artifact.path.checksum(.sha256))
+        }
+
+        return cachedArtifact
     }
 
     private func versionCachePath(for product: String, version: String) -> Path {
@@ -133,75 +123,67 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
 }
 
 extension CacheEngineDelegator {
-    public func upload(_ artifacts: [AnyArtifact], force: Bool, skipClean: Bool) -> AnyPublisher<[CachedArtifact], Error> {
-        return artifacts
-            .publisher
-            .setFailureType(to: Error.self)
-            .flatMap(maxPublishers: .max(1)) { artifact -> AnyPublisher<CachedArtifact, Error> in
-                return self.exists(artifact: artifact)
-                    .tryFlatMap { exists -> AnyPublisher<CachedArtifact, Error> in
-                        if !exists || force {
-                            log.info("☁️ Uploading \(artifact.name)...")
+    public func upload(_ artifacts: [AnyArtifact], force: Bool, skipClean: Bool) async throws -> [CachedArtifact] {
+        var cachedArtifacts: [CachedArtifact] = []
 
-                            if self.cache.requiresCompression {
-                                return self.compress(artifact, skipClean: skipClean)
-                                    .flatMap { self.put(artifact: AnyArtifact($0)) }
-                                    .eraseToAnyPublisher()
-                            } else {
-                                return self.put(artifact: artifact)
-                            }
-                        } else {
-                            if let compressed = artifact.base as? CompressedArtifact {
-                                return Just(try CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact), localPath: compressed.path))
-                                    .setFailureType(to: Error.self)
-                                    .eraseToAnyPublisher()
-                            } else {
-                                return Just(CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact)))
-                                    .setFailureType(to: Error.self)
-                                    .eraseToAnyPublisher()
-                            }
-                        }
-                    }
-                    .eraseToAnyPublisher()
+        for artifact in artifacts {
+            let exists = try await exists(artifact: artifact)
+
+            if !exists || force {
+                log.info("☁️ Uploading \(artifact.name)...")
+
+                if self.cache.requiresCompression {
+                    let compessed = try self.compress(artifact, skipClean: skipClean)
+                    let cached = try await self.put(artifact: AnyArtifact(compessed))
+                    cachedArtifacts.append(cached)
+                } else {
+                    let cached = try await self.put(artifact: artifact)
+                    cachedArtifacts.append(cached)
+                }
+            } else {
+                if let compressed = artifact.base as? CompressedArtifact {
+                    let cached = try CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact), localPath: compressed.path)
+                    cachedArtifacts.append(cached)
+                } else {
+                    let cached = CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact))
+                    cachedArtifacts.append(cached)
+                }
             }
-            .collect()
-            .eraseToAnyPublisher()
+        }
+
+        return cachedArtifacts
     }
 
-    public func compress(_ artifact: AnyArtifact, skipClean: Bool) -> AnyPublisher<CompressedArtifact, Error> {
-        return Future.try {
+    public func compress(_ artifact: AnyArtifact, skipClean: Bool) throws -> CompressedArtifact {
+        if let base = artifact.base as? CompressedArtifact {
+            return base
+        }
 
-            if let base = artifact.base as? CompressedArtifact {
-                return base
-            }
+        let compressed = CompressedArtifact(
+            name: artifact.name,
+            parentName: artifact.parentName,
+            version: artifact.version,
+            path: artifact.path.parent() + "\(artifact.path.lastComponent).zip"
+        )
 
-            let compressed = CompressedArtifact(
-                name: artifact.name,
-                parentName: artifact.parentName,
-                version: artifact.version,
-                path: artifact.path.parent() + "\(artifact.path.lastComponent).zip"
-            )
-
-            if compressed.path.exists, !skipClean {
-                try compressed.path.delete()
-            } else if compressed.path.exists {
-                return compressed
-            }
-
-            do {
-                log.info("Compressing \(artifact.name):")
-                try Zip.zipFiles(
-                    paths: [artifact.path.url],
-                    zipFilePath: compressed.path.url,
-                    password: nil,
-                    progress: { log.progress(percent: $0) }
-                )
-            } catch ZipError.zipFail {
-                throw ScipioError.zipFailure(artifact)
-            }
-
+        if compressed.path.exists, !skipClean {
+            try compressed.path.delete()
+        } else if compressed.path.exists {
             return compressed
         }
-        .eraseToAnyPublisher()
+
+        do {
+            log.info("Compressing \(artifact.name):")
+            try Zip.zipFiles(
+                paths: [artifact.path.url],
+                zipFilePath: compressed.path.url,
+                password: nil,
+                progress: { log.progress(percent: $0) }
+            )
+        } catch ZipError.zipFail {
+            throw ScipioError.zipFailure(artifact)
+        }
+
+        return compressed
     }
 }

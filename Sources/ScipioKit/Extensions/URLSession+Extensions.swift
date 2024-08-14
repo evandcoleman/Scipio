@@ -16,14 +16,23 @@ extension URLSession {
         return session
     }
 
-    func downloadTask(with url: URL, progressHandler: @escaping (Double) -> Void, completionHandler: @escaping (URL?, URLResponse?, Error?) -> Void) -> URLSessionDownloadTask {
+    func downloadTask(
+        with url: URL,
+        progressHandler: @escaping (Double) -> Void,
+        completionHandler: @escaping (URL?, URLResponse?, Error?) -> Void
+    ) -> URLSessionDownloadTask {
 
         internalDelegate?.downloadRequests[url] = (progressHandler, completionHandler)
 
         return downloadTask(with: url)
     }
 
-    func uploadTask(with request: URLRequest, fromFile file: URL, progressHandler: @escaping (Double) -> Void, completionHandler: @escaping (Data?, URLResponse?, Error?) -> Void) -> URLSessionUploadTask {
+    func uploadTask(
+        with request: URLRequest,
+        fromFile file: URL,
+        progressHandler: @escaping (Double) -> Void,
+        completionHandler: @escaping (Data?, URLResponse?, Error?) -> Void
+    ) -> URLSessionUploadTask {
 
         internalDelegate?.uploadRequests[request.url!] = (progressHandler, completionHandler)
 
@@ -38,7 +47,13 @@ private final class Delegate: NSObject, URLSessionDownloadDelegate, URLSessionDa
     var downloadRequests: [URL: (progressHandler: (Double) -> Void, completionHandler: (URL?, URLResponse?, Error?) -> Void)] = [:]
     var uploadRequests: [URL: (progressHandler: (Double) -> Void, completionHandler: (Data?, URLResponse?, Error?) -> Void)] = [:]
 
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
         if let url = downloadTask.originalRequest?.url,
            let (progressHandler, _) = downloadRequests[url] {
 
@@ -46,7 +61,11 @@ private final class Delegate: NSObject, URLSessionDownloadDelegate, URLSessionDa
         }
     }
 
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
         if let url = downloadTask.originalRequest?.url,
            let (_, completionHandler) = downloadRequests[url] {
 
@@ -55,7 +74,13 @@ private final class Delegate: NSObject, URLSessionDownloadDelegate, URLSessionDa
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
         if let url = task.originalRequest?.url,
            let (progressHandler, _) = uploadRequests[url] {
 
@@ -63,7 +88,11 @@ private final class Delegate: NSObject, URLSessionDownloadDelegate, URLSessionDa
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
         if let url = task.originalRequest?.url,
            let (_, completionHandler) = uploadRequests[url] {
 
@@ -72,7 +101,11 @@ private final class Delegate: NSObject, URLSessionDownloadDelegate, URLSessionDa
         }
     }
 
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive data: Data
+    ) {
         if let url = dataTask.originalRequest?.url,
            let (_, completionHandler) = uploadRequests[url] {
 

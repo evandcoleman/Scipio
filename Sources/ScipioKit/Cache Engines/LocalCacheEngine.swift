@@ -28,59 +28,54 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
         return localPath(for: product, version: version).url
     }
 
-    public func exists(product: String, version: String) -> AnyPublisher<Bool, Error> {
-        return Just(localPath(for: product, version: version).exists)
-            .setFailureType(to: Error.self)
-            .eraseToAnyPublisher()
+    public func exists(product: String, version: String) async throws -> Bool {
+        return localPath(for: product, version: version).exists
     }
 
-    public func put(artifact: Artifact) -> AnyPublisher<CachedArtifact, Error> {
+    public func put(artifact: Artifact) async throws -> CachedArtifact {
         let cachePath = localPath(for: artifact.name, version: artifact.version)
 
-        return Just(cachePath)
-            .tryMap { cachePath -> CachedArtifact in
-                if cachePath.exists {
-                    try cachePath.delete()
-                }
+        if cachePath.exists {
+            try cachePath.delete()
+        }
 
-                if !cachePath.parent().exists {
-                    try cachePath.parent().mkpath()
-                }
+        if !cachePath.parent().exists {
+            try cachePath.parent().mkpath()
+        }
 
-                try artifact.path.copy(cachePath)
+        try artifact.path.copy(cachePath)
 
-                return CachedArtifact(
-                    name: artifact.name,
-                    parentName: artifact.parentName,
-                    url: cachePath.url
-                )
-            }
-            .eraseToAnyPublisher()
+        return CachedArtifact(
+            name: artifact.name,
+            parentName: artifact.parentName,
+            url: cachePath.url
+        )
     }
 
-    public func get(product: String, in parentName: String, version: String, destination: Path) -> AnyPublisher<Artifact, Error> {
+    public func get(
+        product: String,
+        in parentName: String,
+        version: String,
+        destination: Path
+    ) async throws -> Artifact {
         let cachePath = localPath(for: product, version: version)
 
-        return Just(cachePath)
-            .tryMap { cachePath -> Artifact in
-                if cachePath.exists {
-                    if destination.exists {
-                        try destination.delete()
-                    }
-
-                    try cachePath.copy(destination)
-
-                    return Artifact(
-                        name: product,
-                        parentName: parentName,
-                        version: version,
-                        path: destination
-                    )
-                } else {
-                    throw LocalCacheEngineError.fileNotFound
-                }
+        if cachePath.exists {
+            if destination.exists {
+                try destination.delete()
             }
-            .eraseToAnyPublisher()
+            
+            try cachePath.copy(destination)
+            
+            return Artifact(
+                name: product,
+                parentName: parentName,
+                version: version,
+                path: destination
+            )
+        } else {
+            throw LocalCacheEngineError.fileNotFound
+        }
     }
 
     private func localPath(for product: String, version: String) -> Path {

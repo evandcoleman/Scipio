@@ -2,30 +2,30 @@ import ArgumentParser
 import PathKit
 import ScipioKit
 
-extension Command {
-  struct Run: ParsableCommand {
+struct RunCommand: AsyncParsableCommand {
+    
     static var configuration: CommandConfiguration {
-      .init(
-        commandName: "run",
-        abstract: "Builds and uploads packages"
-      )
+        .init(
+            commandName: "run",
+            abstract: "Builds and uploads packages"
+        )
     }
-
+    
     @OptionGroup var options: Options
-    @OptionGroup var buildOptions: Build.Options
-    @OptionGroup var uploadOptions: Upload.Options
-
-    func run() throws {
+    @OptionGroup var buildOptions: BuildCommand.Options
+    @OptionGroup var uploadOptions: UploadCommand.Options
+    
+    func run() async throws {
         log.useColors = !options.noColors
         log.level = options.logLevel
-
+        
         if let path = options.config {
             Config.setPath(Path(path), buildDirectory: options.buildPath)
         } else {
             Config.readConfig()
         }
-
-        let artifacts = try Runner.build(
+        
+        let artifacts = try await Runner.build(
             dependencies: options.packages,
             platforms: Config.current.platforms,
             force: options.force || buildOptions.forceBuild,
@@ -37,46 +37,46 @@ extension Command {
                 return true
             }
         }
-
-        let cachedArtifacts = try Runner.upload(
+        
+        let cachedArtifacts = try await Runner.upload(
             artifacts: artifacts,
             force: options.force || uploadOptions.forceUpload,
             skipClean: options.skipClean
         )
-
+        
         try Runner.updatePackageManifest(at: Config.current.packageRoot, with: cachedArtifacts, removeMissing: options.packages?.isEmpty != false)
-
+        
         log.success("✅  Done!")
     }
-  }
 }
 
-extension Command.Run {
+extension RunCommand {
+    
     struct Options: ParsableArguments {
         @Flag(help: "Enable verbose logging.")
         var verbose: Bool = false
-
+        
         @Flag(help: "Enable quiet logging.")
         var quiet: Bool = false
-
+        
         @Flag(help: "Disable color output")
         var noColors: Bool = false
-
+        
         @Option(help: "Path to a config file")
         var config: String?
-
+        
         @Argument(help: "An array of dependencies to process", transform: { $0.components(separatedBy: ",") })
         var packages: [String]?
-
+        
         @Option(help: "Path to store and find build artifacts")
         var buildPath: String?
-
+        
         @Flag(help: "If true will force build and upload packages")
         var force: Bool = false
-
+        
         @Flag(help: "If true will reuse existing artifacts")
         var skipClean: Bool = false
-
+        
         var logLevel: Log.Level {
             if verbose {
                 return .verbose

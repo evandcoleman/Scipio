@@ -11,9 +11,9 @@ public protocol DependencyProcessor {
 
     init(dependencies: [Input], options: ProcessorOptions)
 
-    func preProcess() -> AnyPublisher<[ResolvedInput], Error>
-    func process(_ dependency: Input?, resolvedTo resolvedDependency: ResolvedInput) -> AnyPublisher<[AnyArtifact], Error>
-    func postProcess() -> AnyPublisher<(), Error>
+    func preProcess() async throws -> [ResolvedInput]
+    func process(_ dependency: Input?, resolvedTo resolvedDependency: ResolvedInput) async throws -> [AnyArtifact]
+    func postProcess() async throws
 }
 
 public protocol DependencyProducts {
@@ -24,136 +24,121 @@ public protocol DependencyProducts {
 }
 
 extension DependencyProcessor {
-    public func existingArtifacts(dependencies onlyDependencies: [Input]? = nil) -> AnyPublisher<[AnyArtifact], Error> {
+    public func existingArtifacts(dependencies onlyDependencies: [Input]? = nil) async throws -> [AnyArtifact] {
         let dependencies = onlyDependencies ?? self.dependencies
 
-        return preProcess()
-            .map { resolvedDependencies -> [AnyArtifact] in
-                return resolvedDependencies
-                    .filter { resolved in dependencies.contains(where: { $0.name == resolved.name }) }
-                    .flatMap { dependency -> [AnyArtifact] in
-                        return (dependency
-                            .productNames ?? [])
-                            .compactMap { productName in
-                                let path = Config.current.buildPath + "\(productName).xcframework.zip"
+        return try await preProcess()
+            .filter { resolved in dependencies.contains(where: { $0.name == resolved.name }) }
+            .flatMap { dependency -> [AnyArtifact] in
+                return (dependency
+                    .productNames ?? [])
+                    .compactMap { productName in
+                        let path = Config.current.buildPath + "\(productName).xcframework.zip"
 
-                                guard path.exists else {
-                                    log.warning("Skipping \(path.lastComponent) because it doesn't exist.")
-                                    return nil
-                                }
+                        guard path.exists else {
+                            log.warning("Skipping \(path.lastComponent) because it doesn't exist.")
+                            return nil
+                        }
 
-                                return AnyArtifact(Artifact(
-                                    name: productName,
-                                    parentName: dependency.name,
-                                    version: dependency.version(for: productName),
-                                    path: path
-                                ))
-                            }
+                        return AnyArtifact(Artifact(
+                            name: productName,
+                            parentName: dependency.name,
+                            version: dependency.version(for: productName),
+                            path: path
+                        ))
                     }
             }
-            .eraseToAnyPublisher()
     }
 
-    public func process(dependencies onlyDependencies: [Input]? = nil, accumulatedResolvedDependencies: [DependencyProducts]) -> AnyPublisher<([AnyArtifact], [DependencyProducts]), Error> {
-        return preProcess()
-            .tryFlatMap { dependencyProducts -> AnyPublisher<([AnyArtifact], [DependencyProducts]), Error> in
+    public func process(
+        dependencies onlyDependencies: [Input]? = nil,
+        accumulatedResolvedDependencies: [DependencyProducts]
+    ) async throws -> ([AnyArtifact], [DependencyProducts]) {
 
-                let conflictingDependencies: [String: [String]] = (dependencyProducts + accumulatedResolvedDependencies)
-                    .reduce(into: [:]) { accumulated, dependency in
-                        let productNames = Dictionary(
-                            uniqueKeysWithValues: (dependency.productNames ?? [])
-                                .map { ($0, [dependency.name]) }
-                                .filter { !$0.0.isEmpty }
-                        )
+        let dependencyProducts = try await preProcess()
+        let conflictingDependencies: [String: [String]] = (dependencyProducts + accumulatedResolvedDependencies)
+            .reduce(into: [:]) { accumulated, dependency in
+                let productNames = Dictionary(
+                    uniqueKeysWithValues: (dependency.productNames ?? [])
+                        .map { ($0, [dependency.name]) }
+                        .filter { !$0.0.isEmpty }
+                )
 
-                        accumulated.merge(productNames) { $0 + $1 }
-                    }
-                    .filter { $0.value.count > 1 }
+                accumulated.merge(productNames) { $0 + $1 }
+            }
+            .filter { $0.value.count > 1 }
 
-                if let conflict = conflictingDependencies.first {
-                    throw ScipioError.conflictingDependencies(
-                        product: conflict.key,
-                        conflictingDependencies: conflict.value
-                    )
+        if let conflict = conflictingDependencies.first {
+            throw ScipioError.conflictingDependencies(
+                product: conflict.key,
+                conflictingDependencies: conflict.value
+            )
+        }
+
+        var allArtifacts: [AnyArtifact] = []
+
+        for dependencyProduct in dependencyProducts {
+            let dependencies = onlyDependencies ?? self.dependencies
+            let dependency = dependencies.first(where: { $0.name == dependencyProduct.name })
+
+            if let onlyDependencies = onlyDependencies,
+               !onlyDependencies.contains(where: { $0.name == dependencyProduct.name || dependencyProduct.productNames?.contains($0.name) == true }) {
+                continue
+            }
+
+            guard let productNames = dependencyProduct.productNames else {
+                allArtifacts.append(
+                    contentsOf: try await process(dependency, resolvedTo: dependencyProduct)
+                )
+                continue
+            }
+
+            var missingProductNames: [String] = []
+
+            for productName in productNames {
+                if options.force {
+                    missingProductNames.append(productName)
                 }
 
-                return dependencyProducts
-                    .publisher
-                    .setFailureType(to: Error.self)
-                    .tryFlatMap(maxPublishers: .max(1)) { dependencyProduct -> AnyPublisher<[AnyArtifact], Error> in
-                        let dependencies = onlyDependencies ?? self.dependencies
-                        let dependency = dependencies.first(where: { $0.name == dependencyProduct.name })
+                let exists = try await Config.current.cacheDelegator
+                    .exists(product: productName, version: dependencyProduct.version(for: productName))
 
-                        if let onlyDependencies = onlyDependencies,
-                           !onlyDependencies.contains(where: { $0.name == dependencyProduct.name || dependencyProduct.productNames?.contains($0.name) == true }) {
-                            return Empty()
-                                .setFailureType(to: Error.self)
-                                .eraseToAnyPublisher()
-                        }
-
-                        guard let productNames = dependencyProduct.productNames else {
-                            return self.process(dependency, resolvedTo: dependencyProduct)
-                        }
-
-                        return productNames
-                            .publisher
-                            .setFailureType(to: Error.self)
-                            .flatMap(maxPublishers: .max(2)) { productName -> AnyPublisher<String, Error> in
-                                if self.options.force {
-                                    return Just(productName)
-                                        .setFailureType(to: Error.self)
-                                        .eraseToAnyPublisher()
-                                }
-
-                                return Config.current.cacheDelegator
-                                    .exists(product: productName, version: dependencyProduct.version(for: productName))
-                                    .filter { !$0 }
-                                    .map { _ in productName }
-                                    .eraseToAnyPublisher()
-                            }
-                            .collect()
-                            .flatMap { missingProducts -> AnyPublisher<[AnyArtifact], Error> in
-                                if missingProducts.isEmpty {
-                                    return productNames
-                                        .publisher
-                                        .setFailureType(to: Error.self)
-                                        .tryFlatMap(maxPublishers: .max(1)) { productName -> AnyPublisher<AnyArtifact, Error> in
-                                            let path = Config.current.buildPath + "\(productName).xcframework"
-
-                                            if path.exists, self.options.skipClean {
-                                                return Just(AnyArtifact(Artifact(
-                                                    name: productName,
-                                                    parentName: dependencyProduct.name,
-                                                    version: dependencyProduct.version(for: productName),
-                                                    path: path
-                                                )))
-                                                .setFailureType(to: Error.self)
-                                                .eraseToAnyPublisher()
-                                            } else {
-                                                return Config.current.cacheDelegator
-                                                    .get(
-                                                        product: productName,
-                                                        in: dependencyProduct.name,
-                                                        version: dependencyProduct.version(for: productName),
-                                                        destination: path
-                                                    )
-                                                    .eraseToAnyPublisher()
-                                            }
-                                        }
-                                        .collect()
-                                        .eraseToAnyPublisher()
-                                } else {
-                                    return self.process(dependency, resolvedTo: dependencyProduct)
-                                }
-                            }
-                            .eraseToAnyPublisher()
-                    }
-                    .collect()
-                    .map { ($0.flatMap { $0 }, dependencyProducts) }
-                    .eraseToAnyPublisher()
+                if !exists {
+                    missingProductNames.append(productName)
+                }
             }
-            .flatMap { next in self.postProcess().map { _ in next } }
-            .eraseToAnyPublisher()
+
+            if missingProductNames.isEmpty {
+                for productName in productNames {
+                    let path = Config.current.buildPath + "\(productName).xcframework"
+
+                    if path.exists, self.options.skipClean {
+                        allArtifacts.append(AnyArtifact(Artifact(
+                            name: productName,
+                            parentName: dependencyProduct.name,
+                            version: dependencyProduct.version(for: productName),
+                            path: path
+                        )))
+                    } else {
+                        let artifact = try await Config.current.cacheDelegator
+                            .get(
+                                product: productName,
+                                in: dependencyProduct.name,
+                                version: dependencyProduct.version(for: productName),
+                                destination: path
+                            )
+                        allArtifacts.append(artifact)
+                    }
+                }
+            } else {
+                let artifacts = try await self.process(dependency, resolvedTo: dependencyProduct)
+                allArtifacts.append(contentsOf: artifacts)
+            }
+        }
+
+        try await postProcess()
+
+        return (allArtifacts, dependencyProducts)
     }
 }
 
