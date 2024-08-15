@@ -61,7 +61,7 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
         return exists
     }
 
-    public func get(product: String, in parentName: String, version: String, destination: Path) async throws -> AnyArtifact {
+    public func get(product: String, parentNames: [String], version: String, destination: Path) async throws -> AnyArtifact {
         log.verbose("Fetching \(product)-\(version)")
 
         let normalizedDestination = cache.requiresCompression && destination.extension != "zip" ? destination.parent() + "\(destination.lastComponent).zip" : destination
@@ -75,14 +75,14 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
                 if self.cache.requiresCompression {
                     AnyArtifact(CompressedArtifact(
                         name: product,
-                        parentName: parentName,
+                        parentNames: parentNames,
                         version: version,
                         path: normalizedDestination
                     ))
                 } else {
                     AnyArtifact(Artifact(
                         name: product,
-                        parentName: parentName,
+                        parentNames: parentNames,
                         version: version,
                         path: destination
                     ))
@@ -95,7 +95,7 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
                 return artifact
             } else {
                 let artifact = AnyArtifact(try await self.cache
-                    .get(product: product, in: parentName, version: version, destination: normalizedDestination))
+                    .get(product: product, parentNames: parentNames, version: version, destination: normalizedDestination))
                 if artifact.path.exists, artifact.path.isFile {
                     try self.versionCachePath(for: artifact.name, version: artifact.version)
                         .write(artifact.path.checksum(.sha256))
@@ -142,10 +142,10 @@ extension CacheEngineDelegator {
                 }
             } else {
                 if let compressed = artifact.base as? CompressedArtifact {
-                    let cached = try CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact), localPath: compressed.path)
+                    let cached = try CachedArtifact(name: artifact.name, parentNames: artifact.parentNames, url: self.downloadUrl(for: artifact), localPath: compressed.path)
                     cachedArtifacts.append(cached)
                 } else {
-                    let cached = CachedArtifact(name: artifact.name, parentName: artifact.parentName, url: self.downloadUrl(for: artifact))
+                    let cached = CachedArtifact(name: artifact.name, parentNames: artifact.parentNames, url: self.downloadUrl(for: artifact))
                     cachedArtifacts.append(cached)
                 }
             }
@@ -161,7 +161,7 @@ extension CacheEngineDelegator {
 
         let compressed = CompressedArtifact(
             name: artifact.name,
-            parentName: artifact.parentName,
+            parentNames: artifact.parentNames,
             version: artifact.version,
             path: artifact.path.parent() + "\(artifact.path.lastComponent).zip"
         )

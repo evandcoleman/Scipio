@@ -13,6 +13,7 @@ public struct SwiftPackageFile {
     public var platforms: [Platform: String]
     public var products: [Product] = []
     public var targets: [Target] = []
+    public var dependencies: [PackageModel.PackageDependency] = []
 
     public var artifacts: [CachedArtifact]
     public var removeMissing: Bool
@@ -23,7 +24,7 @@ public struct SwiftPackageFile {
         name: String,
         path: Path,
         platforms: [Platform: String],
-        artifacts: [CachedArtifact],
+        artifacts: [CachedArtifact] = [],
         removeMissing: Bool,
         observabilityScope: ObservabilityScope
     ) throws {
@@ -65,6 +66,8 @@ public struct SwiftPackageFile {
 
         let sortedArtifacts = artifactsAndTargets
             .sorted { $0.name < $1.name }
+
+        dependencies = manifest?.dependencies ?? []
 
         products = sortedArtifacts
             .map { Product(name: $0.name, targets: [$0.name]) }
@@ -144,6 +147,11 @@ let package = Package(
     .map { $0.asString(indenting: 8.spaces) }
     .joined(separator: ",\n"))
     ],
+    dependencies: [
+\(dependencies
+    .map { $0.asString(indenting: 8.spaces) }
+    .joined(separator: ",\n"))
+    ],
     targets: [
 \(targets
     .map { $0.asString(indenting: 8.spaces, relativeTo: relativeTo) }
@@ -170,19 +178,36 @@ extension SwiftPackageFile {
 
     public struct Target {
         public var name: String
-        public var url: URL
+        public var dependencies: [Dependency]
+        public var url: URL?
         public var checksum: String?
+
+        public struct Dependency {
+            public var name: String
+            public var package: String
+
+            func asString(indenting: String) -> String {
+                return #"\#(indenting).product(name: "\#(name)", package: "\#(package)")"#
+            }
+        }
 
         public init(_ target: TargetDescription) {
             name = target.name
             checksum = target.checksum
+            dependencies = target.dependencies
+                .map { dependency in
+                    return .init(
+                        name: dependency.name,
+                        package: dependency.package ?? dependency.name
+                    )
+                }
 
             if let urlString = target.url, let url = URL(string: urlString) {
                 self.url = url
             } else if let path = target.path {
                 self.url = URL(fileURLWithPath: path)
             } else {
-                fatalError("target missing url and path")
+                self.url = nil
             }
         }
 
@@ -190,17 +215,25 @@ extension SwiftPackageFile {
             self.name = name
             self.url = url
             self.checksum = checksum
+            self.dependencies = []
+        }
+
+        public init(name: String, dependencies: [Dependency]) {
+            self.name = name
+            self.url = nil
+            self.checksum = nil
+            self.dependencies = dependencies
         }
 
         func asString(indenting: String, relativeTo: Path) -> String {
-            if url.isFileURL {
+            if let url, url.isFileURL {
                 return """
 \(indenting).binaryTarget(
 \(indenting)    name: "\(name)",
 \(indenting)    path: "\(url.path.replacingOccurrences(of: relativeTo.string, with: "").trimmingCharacters(in: .init(charactersIn: "/")))"
 \(indenting))
 """
-            } else {
+            } else if let url {
                 return """
 \(indenting).binaryTarget(
 \(indenting)    name: "\(name)",
@@ -208,7 +241,46 @@ extension SwiftPackageFile {
 \(indenting)    checksum: "\(checksum!)"
 \(indenting))
 """
+            } else {
+                return """
+\(indenting).target(
+\(indenting)    name: "\(name)",
+\(indenting)    dependencies: [
+\(dependencies
+    .map { $0.asString(indenting: indenting + 8.spaces) }
+    .joined(separator: ",\n"))
+\(indenting)    ]
+\(indenting))
+"""
             }
+        }
+    }
+}
+
+extension PackageModel.PackageDependency {
+
+    func asString(indenting: String) -> String {
+        guard 
+            case .sourceControl(let sourceControl) = self,
+            case .remote(let url) = sourceControl.location
+        else { return "" }
+
+        return #"\#(indenting).package(url: "\#(url.absoluteString)", \#(sourceControl.requirement.asString()))"#
+    }
+}
+
+extension PackageModel.PackageDependency.SourceControl.Requirement {
+
+    func asString() -> String {
+        switch self {
+        case .exact(let version):
+            return "exact: \"\(version.description)\""
+        case .range(let range):
+            return "from: \"\(range.lowerBound.description)\""
+        case .revision(let string):
+            return "revision: \"\(string)\""
+        case .branch(let string):
+            return "branch: \"\(string)\""
         }
     }
 }

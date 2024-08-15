@@ -32,7 +32,7 @@ struct RunCommand: AsyncParsableCommand {
             skipClean: options.skipClean
         ).filter { artifact in
             if let packages = options.packages {
-                return packages.contains(artifact.parentName)
+                return packages.contains { artifact.parentNames.contains($0) }
             } else {
                 return true
             }

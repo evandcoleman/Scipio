@@ -9,7 +9,7 @@ public protocol CacheEngine {
 
     func downloadUrl(for product: String, version: String) -> URL
     func exists(product: String, version: String) async throws -> Bool
-    func get(product: String, in parentName: String, version: String, destination: Path) async throws -> ArtifactType
+    func get(product: String, parentNames: [String], version: String, destination: Path) async throws -> ArtifactType
     func put(artifact: ArtifactType) async throws -> CachedArtifact
 }
 
@@ -33,14 +33,14 @@ public struct AnyCacheEngine {
 
     private let _downloadUrl: (String, String) -> URL
     private let _exists: (String, String) async throws -> Bool
-    private let _get: (String, String, String, Path) async throws -> AnyArtifact
+    private let _get: (String, [String], String, Path) async throws -> AnyArtifact
     private let _put: (AnyArtifact) async throws -> CachedArtifact
 
     public init<T: CacheEngine>(_ base: T) {
         requiresCompression = base.requiresCompression
         _downloadUrl = base.downloadUrl
         _exists = base.exists
-        _get = { AnyArtifact(try await base.get(product: $0, in: $1, version: $2, destination: $3)) }
+        _get = { AnyArtifact(try await base.get(product: $0, parentNames: $1, version: $2, destination: $3)) }
         _put = { try await base.put(artifact: $0.base as! T.ArtifactType) }
     }
 
@@ -52,8 +52,8 @@ public struct AnyCacheEngine {
         return try await _exists(product, version)
     }
 
-    public func get(product: String, in parentName: String, version: String, destination: Path) async throws -> AnyArtifact {
-        return try await _get(product, parentName, version, destination)
+    public func get(product: String, parentNames: [String], version: String, destination: Path) async throws -> AnyArtifact {
+        return try await _get(product, parentNames, version, destination)
     }
 
     public func put(artifact: AnyArtifact) async throws -> CachedArtifact {

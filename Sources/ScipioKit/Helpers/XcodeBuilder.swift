@@ -17,11 +17,18 @@ func xcrun(_ command: String, _ arguments: [String], in path: Path? = nil, passE
 }
 
 struct XcodeBuilder {
-    static func getArchivePath(dependency: any NamedDependency, scheme: String, sdk: Xcodebuild.SDK) -> Path {
-        return Config.current.getArchivePath(for: dependency) + "\(scheme)-\(sdk.rawValue).xcarchive"
+    static func getArchivePath(scheme: String, sdk: Xcodebuild.SDK) throws -> Path {
+        return try Config.current.getArchivePath() + "\(scheme)-\(sdk.rawValue).xcarchive"
     }
 
-    static func archive(dependency: any NamedDependency, scheme: String, in path: Path, for sdk: Xcodebuild.SDK, derivedDataPath: Path? = nil, sourcePackagesPath: Path? = nil, additionalBuildSettings: [String: String]?) throws -> Path {
+    static func archive(
+        scheme: String,
+        in path: Path,
+        for sdk: Xcodebuild.SDK,
+        derivedDataPath: Path? = nil,
+        sourcePackagesPath: Path? = nil,
+        additionalBuildSettings: [String: String]?
+    ) throws -> Path {
 
         var buildSettings: [String: String] = [
             "BUILD_LIBRARY_FOR_DISTRIBUTION": "YES",
@@ -30,14 +37,19 @@ struct XcodeBuilder {
             "INSTALL_PATH": "/Library/Frameworks",
             "OTHER_SWIFT_FLAGS": "-no-verify-emitted-module-interface",
             "SKIP_INSTALL": "NO",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "",
             "SWIFT_COMPILATION_MODE": "wholemodule",
+            "SWIFT_PACKAGE": "NO",
         ]
+
+        buildSettings["IOS_DEPLOYMENT_TARGET"] = Config.current.platformVersions[.iOS]
+        buildSettings["MACOSX_DEPLOYMENT_TARGET"] = Config.current.platformVersions[.macOS]
 
         if let additionalBuildSettings = additionalBuildSettings {
             buildSettings.merge(additionalBuildSettings) { l, r in r }
         }
 
-        let archivePath = getArchivePath(dependency: dependency, scheme: scheme, sdk: sdk)
+        let archivePath = try getArchivePath(scheme: scheme, sdk: sdk)
 
         log.info("🏗  Building \(scheme)-\(sdk.rawValue)...")
 

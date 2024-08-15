@@ -72,7 +72,7 @@ extension HTTPCacheEngineProtocol {
                             continuation.resume(
                                 returning: try CachedArtifact(
                                     name: artifact.name,
-                                    parentName: artifact.parentName,
+                                    parentNames: artifact.parentNames,
                                     url: downloadUrl(for: artifact.name, version: artifact.version),
                                     localPath: artifact.path
                                 )
@@ -91,7 +91,7 @@ extension HTTPCacheEngineProtocol {
 
     public func get(
         product: String,
-        in parentName: String,
+        parentNames: [String],
         version: String,
         destination: Path
     ) async throws -> CompressedArtifact {
@@ -127,7 +127,7 @@ extension HTTPCacheEngineProtocol {
 
         return CompressedArtifact(
             name: product,
-            parentName: parentName,
+            parentNames: parentNames,
             version: version,
             path: destination.isDirectory ? destination + url.lastPathComponent : destination
         )

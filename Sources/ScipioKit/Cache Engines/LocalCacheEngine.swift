@@ -47,14 +47,14 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
 
         return CachedArtifact(
             name: artifact.name,
-            parentName: artifact.parentName,
+            parentNames: artifact.parentNames,
             url: cachePath.url
         )
     }
 
     public func get(
         product: String,
-        in parentName: String,
+        parentNames: [String],
         version: String,
         destination: Path
     ) async throws -> Artifact {
@@ -71,7 +71,7 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
             
             return Artifact(
                 name: product,
-                parentName: parentName,
+                parentNames: parentNames,
                 version: version,
                 path: destination
             )

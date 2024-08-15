@@ -1,26 +1,33 @@
 import Foundation
+import PackageModel
 import PathKit
 
 public protocol Dependency: NamedDependency, Decodable, Equatable {}
 
-public struct BinaryDependency: Dependency, DependencyProducts {
+public struct BinaryDependency: Dependency {
     public let name: String
     public let url: URL
     public let version: String
     public let excludes: [String]?
 
-    public var productNames: [String]? {
-        let names = try? productNamesCachePath.read()
+    public var products: [ProductVersion] {
+        var names = ((try? productNamesCachePath.read()) ?? "")
             .components(separatedBy: ",")
             .filter { !$0.isEmpty }
-            .nilIfEmpty
 
         if let excludes = excludes {
-            return names?
+            names = names
                 .filter { !excludes.contains($0) }
         }
 
         return names
+            .map { name in
+                return ProductVersion(
+                    productName: name,
+                    version: version,
+                    parentNames: [self.name]
+                )
+            }
     }
 
     public var productNamesCachePath: Path {
@@ -36,18 +43,6 @@ public struct BinaryDependency: Dependency, DependencyProducts {
             try productNamesCachePath.write(productNames.joined(separator: ","))
         }
     }
-}
-
-public struct CocoaPodDependency: Dependency {
-    public let name: String
-    public let version: String?
-    public let from: String?
-    public let git: URL?
-    public let branch: String?
-    public let commit: String?
-    public let podspec: URL?
-    public let excludes: [String]?
-    public let additionalBuildSettings: [String: String]?
 }
 
 public struct PackageDependency: Dependency {
@@ -70,19 +65,19 @@ public struct PackageDependency: Dependency {
     // A shortcut to rename a product with the same name as the package
 //    public let renamePackageProduct: String?
 
-//    public var versionRequirement: SwiftPackage.VersionRequirement {
-//        if let from {
-//            return .upToNextMajorVersion(from)
-//        } else if let revision {
-//            return .revision(revision)
-//        } else if let branch {
-//            return .branch(branch)
-//        } else if let exactVersion = exactVersion ?? version {
-//            return .exact(exactVersion)
-//        } else {
-//            fatalError("Unsupported package version requirement")
-//        }
-//    }
+    public var versionRequirement: PackageModel.PackageDependency.SourceControl.Requirement {
+        if let from {
+            return .range(.upToNextMajor(from: .init(stringLiteral: from)))
+        } else if let revision {
+            return .revision(revision)
+        } else if let branch {
+            return .branch(branch)
+        } else if let exactVersion = exactVersion ?? version {
+            return .exact(.init(stringLiteral: exactVersion))
+        } else {
+            fatalError("Unsupported package version requirement")
+        }
+    }
 }
 
 import Workspace

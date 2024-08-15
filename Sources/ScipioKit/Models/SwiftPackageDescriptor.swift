@@ -1,114 +1,85 @@
 import Foundation
 import PathKit
 
-import Basics
 import PackageModel
-import PackageLoading
-import PackageGraph
-import SPMBuildCore
-import TSCBasic
-import Workspace
 
-public struct SwiftPackageDescriptor: DependencyProducts {
-
-    public let name: String
-    public let version: String
-    public let path: Path
-    public let buildables: [SwiftPackageBuildable]
-
-    let toolchain: UserToolchain
-    let workspace: Workspace
-    let graph: PackageGraph
-    let manifest: Manifest
-
-    public var targets: [TargetDescription] {
-        manifest.targets
-    }
-
-    public var productNames: [String]? {
-        return buildables.map(\.name)
-    }
-
-    public init(path: Path, name: String, version: String, observabilityScope: ObservabilityScope) throws {
-        self.name = name
-        self.path = path
-
-        let root = try AbsolutePath(validating: path.string)
-        self.toolchain = try UserToolchain(destination: try .hostDestination())
-        let loader = ManifestLoader(toolchain: self.toolchain)
-        self.workspace = try Workspace(forRootPackage: root, customManifestLoader: loader)
-        self.graph = try workspace.loadPackageGraph(rootPath: root, observabilityScope: observabilityScope)
-        let workspace = self.workspace
-        self.manifest = try tsc_await {
-            workspace.loadRootManifest(
-                at: root,
-                observabilityScope: observabilityScope,
-                completion: $0
-            )
-        }
-        self.buildables = manifest.getBuildables()
-        self.version = version
-    }
-
-    public func version(for productName: String) -> String {
-        return version
-    }
-}
-
-extension Manifest {
-
-    public func getBuildables() -> [SwiftPackageBuildable] {
-        return products
-            .filter { $0.type.isLibrary }
-            .flatMap { getBuildables(in: $0) }
-            .uniqued()
-    }
-
-    private func getBuildables(in product: ProductDescription) -> [SwiftPackageBuildable] {
-        let targets = recursiveTargets(in: product)
-
-        return targets
-            .compactMap { target -> SwiftPackageBuildable? in
-                let dependencies = target.dependencies.map(\.name)
-
-                if target.type == .binary {
-                    return .binaryTarget(target)
-                } else if dependencies.count == 1,
-                          targets.first(where: { $0.name == dependencies[0] })?.type == .binary {
-
-                    return nil
-                } else {
-                    return .target(target.name)
-                }
-            }
-    }
-
-    private func recursiveTargets(in product: ProductDescription) -> [TargetDescription] {
-        return product
-            .targets
-            .compactMap { target in targets.first { $0.name == target } }
-            .flatMap { recursiveTargets(in: $0) }
-    }
-
-    private func recursiveTargets(in target: TargetDescription) -> [TargetDescription] {
-        return [target] + target
-            .dependencies
-            .flatMap { recursiveTargets(in: $0, target: target) }
-    }
-
-    private func recursiveTargets(
-        in dependency: TargetDescription.Dependency,
-        target: TargetDescription
-    ) -> [TargetDescription] {
-        let resolvedTarget = targets.first { $0.name == dependency.name }
-
-        if let resolvedTarget {
-            return recursiveTargets(in: resolvedTarget)
-        }
-
-        return [target]
-    }
-}
+//public struct SwiftPackageDescriptor: DependencyProducts {
+//
+//    public let name: String
+//    public let version: String
+//    public let path: Path
+//    public let buildables: [SwiftPackageBuildable]
+//
+//    public var productNames: [String]? {
+//        return buildables.map(\.name)
+//    }
+//
+//    public init(path: Path, name: String, version: String) throws {
+//        self.name = name
+//        self.path = path
+//        self.buildables = manifest.getBuildables()
+//        self.version = version
+//    }
+//
+//    public func version(for productName: String) -> String {
+//        return version
+//    }
+//}
+//
+//extension Manifest {
+//
+//    public func getBuildables() -> [SwiftPackageBuildable] {
+//        return products
+//            .filter { $0.type.isLibrary }
+//            .flatMap { getBuildables(in: $0) }
+//            .uniqued()
+//    }
+//
+//    private func getBuildables(in product: ProductDescription) -> [SwiftPackageBuildable] {
+//        let targets = recursiveTargets(in: product)
+//
+//        return targets
+//            .compactMap { target -> SwiftPackageBuildable? in
+//                let dependencies = target.dependencies.map(\.name)
+//
+//                if target.type == .binary {
+//                    return .binaryTarget(target)
+//                } else if dependencies.count == 1,
+//                          targets.first(where: { $0.name == dependencies[0] })?.type == .binary {
+//
+//                    return nil
+//                } else {
+//                    return .target(target.name)
+//                }
+//            }
+//    }
+//
+//    private func recursiveTargets(in product: ProductDescription) -> [TargetDescription] {
+//        return product
+//            .targets
+//            .compactMap { target in targets.first { $0.name == target } }
+//            .flatMap { recursiveTargets(in: $0) }
+//    }
+//
+//    private func recursiveTargets(in target: TargetDescription) -> [TargetDescription] {
+//        return [target] + target
+//            .dependencies
+//            .flatMap { recursiveTargets(in: $0, target: target) }
+//    }
+//
+//    private func recursiveTargets(
+//        in dependency: TargetDescription.Dependency,
+//        target: TargetDescription
+//    ) -> [TargetDescription] {
+//        let resolvedTarget = targets.first { $0.name == dependency.name }
+//
+//        if let resolvedTarget {
+//            return recursiveTargets(in: resolvedTarget)
+//        }
+//
+//        return [target]
+//    }
+//}
 
 extension TargetDescription.Dependency {
 
@@ -120,6 +91,15 @@ extension TargetDescription.Dependency {
             return name
         case .product(let name, _, _, _):
             return name
+        }
+    }
+
+    var package: String? {
+        switch self {
+        case .product(_, let package, _, _):
+            return package
+        case .byName, .target:
+            return nil
         }
     }
 }

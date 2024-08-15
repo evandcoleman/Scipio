@@ -10,7 +10,6 @@ public struct Config: Decodable, Equatable {
     public let cacheDelegator: CacheEngineDelegator
     public let binaries: [BinaryDependency]?
     public let packages: [PackageDependency]?
-    public let pods: [CocoaPodDependency]?
 
     public var buildDirectory: String?
     public let deploymentTarget: [String: String]
@@ -51,13 +50,12 @@ public struct Config: Decodable, Equatable {
 
     private var _path: Path!
 
-    public init<Cache: CacheEngine>(name: String, cache: Cache, deploymentTarget: [String: String], binaries: [BinaryDependency]? = nil, packages: [PackageDependency]? = nil, pods: [CocoaPodDependency]? = nil) {
+    public init<Cache: CacheEngine>(name: String, cache: Cache, deploymentTarget: [String: String], binaries: [BinaryDependency]? = nil, packages: [PackageDependency]? = nil) {
         self.name = name
         self.cacheDelegator = CacheEngineDelegator(cache: cache)
         self.deploymentTarget = deploymentTarget
         self.binaries = binaries
         self.packages = packages
-        self.pods = pods
     }
 
     enum CodingKeys: String, CodingKey {
@@ -65,7 +63,6 @@ public struct Config: Decodable, Equatable {
         case cacheDelegator = "cache"
         case binaries
         case packages
-        case pods
         case buildDirectory
         case deploymentTarget
     }
@@ -98,23 +95,53 @@ public struct Config: Decodable, Equatable {
         }
     }
 
-    func getArchivePath(for dependency: any NamedDependency) -> Path {
-        return buildPath + "Archives" + dependency.name
+    func getArchivePath() throws -> Path {
+        let path = buildPath + "Archives"
+
+        if !path.exists {
+            try path.mkpath()
+        }
+
+        return path
     }
 
-    func getFrameworkPath(for dependency: any NamedDependency, productName: String) -> Path {
-        return getArchivePath(for: dependency) + "\(productName).xcframework"
+//    func getArchivePath<T: ArtifactProtocol>(for artifact: T) -> Path {
+//        return buildPath + "Archives" + artifact.parentName
+//    }
+//
+//    func getFrameworkPath<T: ArtifactProtocol>(for artifact: T) -> Path {
+//        return getArchivePath(for: artifact) + "\(artifact.name).xcframework"
+//    }
+
+    func getFrameworkPath(productName: String) throws -> Path {
+        return try getArchivePath() + "\(productName).xcframework"
     }
 
-    func getCompressedFrameworkPath(for dependency: any NamedDependency, productName: String) -> Path {
-        return getArchivePath(for: dependency) + "\(productName).xcframework.zip"
+    func getCompressedFrameworkPath(productName: String) throws -> Path {
+        return try getArchivePath() + "\(productName).xcframework.zip"
     }
 
-    func getPackageRepositoriesPath() -> Path {
-        return buildPath + "PackageRepositories"
+    func getPackagesPath() throws -> Path {
+        let path = buildPath + "Packages"
+
+        if !path.exists {
+            try path.mkpath()
+        }
+
+        return path
     }
 
-    func getPackageRepositoryPath(for dependency: any NamedDependency) -> Path {
-        return buildPath + "PackageRepositories" + dependency.name
+    func getPackageCheckoutPath(packageName: String) throws -> Path {
+        let path = buildPath + "PackageCheckouts" + packageName
+
+        if !path.exists {
+            try path.mkpath()
+        }
+
+        return path
     }
+
+//    func getPackageRepositoryPath(for dependency: any NamedDependency) -> Path {
+//        return buildPath + "PackageRepositories" + dependency.name
+//    }
 }

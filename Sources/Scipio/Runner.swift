@@ -25,7 +25,7 @@ enum Runner {
         )
 
         var artifacts: [AnyArtifact] = []
-        var resolvedDependencies: [DependencyProducts] = []
+        var productVersions: [any Product] = []
 
         if let packages = Config.current.packages, !packages.isEmpty {
             let processor = PackageProcessor(
@@ -37,43 +37,27 @@ enum Runner {
                 .compactMap { name in packages.first { $0.name == name } }
             let (a, r) = try await processor.process(
                 dependencies: filtered,
-                accumulatedResolvedDependencies: resolvedDependencies
+                accumulatedProducts: productVersions
             )
             artifacts <<< a
-            resolvedDependencies <<< r
+            productVersions <<< r
         }
 
-        if let binaries = Config.current.binaries, !binaries.isEmpty {
-            let processor = BinaryProcessor(
-                dependencies: binaries,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
-            )
-            let filtered = dependencies?
-                .compactMap { name in binaries.first { $0.name == name } }
-            let (a, r) = try await processor.process(
-                dependencies: filtered,
-                accumulatedResolvedDependencies: resolvedDependencies
-            )
-            artifacts <<< a
-            resolvedDependencies <<< r
-        }
-
-        if let pods = Config.current.pods, !pods.isEmpty {
-            let processor = CocoaPodProcessor(
-                dependencies: pods,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
-            )
-            let filtered = dependencies?
-                .compactMap { name in pods.first { $0.name == name } }
-            let (a, r) = try await processor.process(
-                dependencies: filtered,
-                accumulatedResolvedDependencies: resolvedDependencies
-            )
-            artifacts <<< a
-            resolvedDependencies <<< r
-        }
+//        if let binaries = Config.current.binaries, !binaries.isEmpty {
+//            let processor = BinaryProcessor(
+//                dependencies: binaries,
+//                options: processorOptions,
+//                observabilityScope: observabilitySystem.topScope
+//            )
+//            let filtered = dependencies?
+//                .compactMap { name in binaries.first { $0.name == name } }
+//            let (a, r) = try await processor.process(
+//                dependencies: filtered,
+//                accumulatedResolvedDependencies: resolvedDependencies
+//            )
+//            artifacts <<< a
+//            resolvedDependencies <<< r
+//        }
 
         return artifacts
     }

@@ -10,7 +10,7 @@ public protocol NamedDependency {
 
 public protocol DependencyProcessor {
     associatedtype Input: Dependency
-    associatedtype ResolvedInput: DependencyProducts
+    associatedtype ResolvedInput: Product
 
     var dependencies: [Input] { get }
     var options: ProcessorOptions { get }
@@ -18,14 +18,24 @@ public protocol DependencyProcessor {
     init(dependencies: [Input], options: ProcessorOptions, observabilityScope: ObservabilityScope)
 
     func preProcess() async throws -> [ResolvedInput]
-    func process(_ dependency: Input?, resolvedTo resolvedDependency: ResolvedInput) async throws -> [AnyArtifact]
+    func process(
+        dependencies: [Input],
+        product: ResolvedInput
+    ) async throws -> [AnyArtifact]
     func postProcess() async throws
 }
 
-public protocol DependencyProducts: NamedDependency {
-    var productNames: [String]? { get }
+public protocol Product: Equatable, Hashable {
+    var productName: String { get }
+    var version: String { get }
+    var parentNames: [String] { get }
+}
 
-    func version(for productName: String) -> String
+public struct ProductVersion: Equatable, Hashable {
+
+    public var productName: String
+    public var version: String
+    public var parentNames: [String]
 }
 
 extension DependencyProcessor {
@@ -33,44 +43,44 @@ extension DependencyProcessor {
         let dependencies = onlyDependencies ?? self.dependencies
 
         return try await preProcess()
-            .filter { resolved in dependencies.contains(where: { $0.name == resolved.name }) }
-            .flatMap { dependency -> [AnyArtifact] in
-                return (dependency
-                    .productNames ?? [])
-                    .compactMap { productName in
-                        let path = Config.current.getCompressedFrameworkPath(
-                            for: dependency,
-                            productName: productName
+            .filter { resolved in dependencies.contains(where: { resolved.parentNames.contains($0.name) }) }
+            .compactMap { dependencyProduct -> AnyArtifact? in
+                let path =
+                    if Config.current.cacheDelegator.requiresCompression {
+                        try Config.current.getCompressedFrameworkPath(
+                            productName: dependencyProduct.productName
                         )
-
-                        guard path.exists else {
-                            log.warning("Skipping \(path.lastComponent) because it doesn't exist.")
-                            return nil
-                        }
-
-                        return AnyArtifact(Artifact(
-                            name: productName,
-                            parentName: dependency.name,
-                            version: dependency.version(for: productName),
-                            path: path
-                        ))
+                    } else {
+                        try Config.current.getFrameworkPath(
+                            productName: dependencyProduct.productName
+                        )
                     }
+
+                guard path.exists else {
+                    log.warning("Skipping \(path.lastComponent) because it doesn't exist.")
+                    return nil
+                }
+
+                return AnyArtifact(Artifact(
+                    name: dependencyProduct.productName,
+                    parentNames: dependencyProduct.parentNames,
+                    version: dependencyProduct.version,
+                    path: path
+                ))
             }
     }
 
     public func process(
         dependencies onlyDependencies: [Input]? = nil,
-        accumulatedResolvedDependencies: [DependencyProducts]
-    ) async throws -> ([AnyArtifact], [DependencyProducts]) {
+        accumulatedProducts: [any Product]
+    ) async throws -> ([AnyArtifact], [ResolvedInput]) {
 
         let dependencyProducts = try await preProcess()
-        let conflictingDependencies: [String: [String]] = (dependencyProducts + accumulatedResolvedDependencies)
+        let conflictingDependencies: [String: [String]] = (dependencyProducts + accumulatedProducts)
             .reduce(into: [:]) { accumulated, dependency in
-                let productNames = Dictionary(
-                    uniqueKeysWithValues: (dependency.productNames ?? [])
-                        .map { ($0, [dependency.name]) }
-                        .filter { !$0.0.isEmpty }
-                )
+                let productNames = [
+                    dependency.productName: dependency.parentNames
+                ]
 
                 accumulated.merge(productNames) { $0 + $1 }
             }
@@ -84,63 +94,70 @@ extension DependencyProcessor {
         }
 
         var allArtifacts: [AnyArtifact] = []
+        var missingProducts: [ResolvedInput] = []
 
         for dependencyProduct in dependencyProducts {
             let dependencies = onlyDependencies ?? self.dependencies
-            let dependency = dependencies.first(where: { $0.name == dependencyProduct.name })
+            let dependency = dependencies.first(where: { dependencyProduct.parentNames.contains($0.name) })
 
-            if let onlyDependencies = onlyDependencies,
-               !onlyDependencies.contains(where: { $0.name == dependencyProduct.name || dependencyProduct.productNames?.contains($0.name) == true }) {
-                continue
-            }
-
-            guard let productNames = dependencyProduct.productNames else {
-                allArtifacts.append(
-                    contentsOf: try await process(dependency, resolvedTo: dependencyProduct)
+            if 
+                let onlyDependencies = onlyDependencies,
+                !onlyDependencies.contains(
+                    where: { dependencyProduct.parentNames.contains($0.name) || dependencyProduct.productName == $0.name }
                 )
+            {
                 continue
             }
 
-            var missingProductNames: [String] = []
-
-            for productName in productNames {
-                if options.force {
-                    missingProductNames.append(productName)
-                }
-
-                let exists = try await Config.current.cacheDelegator
-                    .exists(product: productName, version: dependencyProduct.version(for: productName))
-
-                if !exists {
-                    missingProductNames.append(productName)
-                }
+            if options.force {
+                missingProducts.append(dependencyProduct)
             }
 
-            if missingProductNames.isEmpty {
-                for productName in productNames {
-                    let path = Config.current.getFrameworkPath(for: dependencyProduct, productName: productName)
+            let exists = try await Config.current.cacheDelegator
+                .exists(product: dependencyProduct.productName, version: dependencyProduct.version)
 
-                    if path.exists, self.options.skipClean {
-                        allArtifacts.append(AnyArtifact(Artifact(
-                            name: productName,
-                            parentName: dependencyProduct.name,
-                            version: dependencyProduct.version(for: productName),
-                            path: path
-                        )))
-                    } else {
-                        let artifact = try await Config.current.cacheDelegator
-                            .get(
-                                product: productName,
-                                in: dependencyProduct.name,
-                                version: dependencyProduct.version(for: productName),
-                                destination: path
-                            )
-                        allArtifacts.append(artifact)
-                    }
+            if !exists {
+                missingProducts.append(dependencyProduct)
+            }
+        }
+
+        missingProducts = missingProducts.uniqued()
+
+        if missingProducts.isEmpty {
+            for dependencyProduct in dependencyProducts {
+                let path = try Config.current.getFrameworkPath(productName: dependencyProduct.productName)
+
+                if path.exists, self.options.skipClean {
+                    allArtifacts.append(AnyArtifact(Artifact(
+                        name: dependencyProduct.productName, 
+                        parentNames: dependencyProduct.parentNames,
+                        version: dependencyProduct.version,
+                        path: path
+                    )))
+                } else {
+                    let artifact = try await Config.current.cacheDelegator
+                        .get(
+                            product: dependencyProduct.productName,
+                            parentNames: dependencyProduct.parentNames,
+                            version: dependencyProduct.version,
+                            destination: path
+                        )
+                    allArtifacts.append(artifact)
                 }
-            } else {
-                let artifacts = try await self.process(dependency, resolvedTo: dependencyProduct)
-                allArtifacts.append(contentsOf: artifacts)
+            }
+        } else {
+            let dependencies = onlyDependencies ?? self.dependencies
+
+            for product in missingProducts {
+                let filteredDependencies = dependencies
+                    .filter { product.parentNames.contains($0.name) || $0.name == product.productName }
+
+                allArtifacts.append(
+                    contentsOf: try await process(
+                        dependencies: filteredDependencies,
+                        product: product
+                    )
+                )
             }
         }
 
@@ -164,14 +181,14 @@ public struct ProcessorOptions {
 
 public protocol ArtifactProtocol {
     var name: String { get }
-    var parentName: String { get }
+    var parentNames: [String] { get }
     var version: String { get }
     var resource: URL { get }
 }
 
 public struct AnyArtifact: ArtifactProtocol {
     public let name: String
-    public let parentName: String
+    public let parentNames: [String]
     public let version: String
     public let resource: URL
 
@@ -185,7 +202,7 @@ public struct AnyArtifact: ArtifactProtocol {
         self.base = base
         
         name = base.name
-        parentName = base.parentName
+        parentNames = base.parentNames
         version = base.version
         resource = base.resource
     }
@@ -193,7 +210,7 @@ public struct AnyArtifact: ArtifactProtocol {
 
 public struct Artifact: ArtifactProtocol {
     public let name: String
-    public let parentName: String
+    public let parentNames: [String]
     public let version: String
     public let path: Path
 
@@ -202,7 +219,7 @@ public struct Artifact: ArtifactProtocol {
 
 public struct CompressedArtifact: ArtifactProtocol {
     public let name: String
-    public let parentName: String
+    public let parentNames: [String]
     public let version: String
     public let path: Path
 
@@ -215,23 +232,23 @@ public struct CompressedArtifact: ArtifactProtocol {
 
 public struct CachedArtifact {
     public let name: String
-    public let parentName: String
+    public let parentNames: [String]
     public let url: URL
     public let checksum: String?
 
     internal var localPath: Path?
 
-    init(name: String, parentName: String, url: URL, localPath: Path) throws {
+    init(name: String, parentNames: [String], url: URL, localPath: Path) throws {
         self.name = name
-        self.parentName = parentName
+        self.parentNames = parentNames
         self.url = url
         self.checksum = try localPath.checksum(.sha256)
         self.localPath = localPath
     }
 
-    init(name: String, parentName: String, url: URL) {
+    init(name: String, parentNames: [String], url: URL) {
         self.name = name
-        self.parentName = parentName
+        self.parentNames = parentNames
         self.url = url
         self.checksum = nil
         self.localPath = nil

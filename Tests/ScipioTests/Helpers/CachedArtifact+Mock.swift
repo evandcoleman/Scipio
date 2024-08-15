@@ -14,7 +14,7 @@ extension CachedArtifact {
 
         return try CachedArtifact(
             name: name,
-            parentName: parentName,
+            parentNames: [parentName],
             url: URL(string: "https://scipio.test/packages/\(name)/\(name).xcframework.zip")!,
             localPath: path
         )
