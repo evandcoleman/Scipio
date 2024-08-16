@@ -362,11 +362,23 @@ public final class PackageProcessor: DependencyProcessor {
             .init(
                 name: Config.current.name,
                 dependencies: dependencies
-                    .map { dependency in
-                        return .init(
-                            name: dependency.name,
-                            package: PackageIdentity(urlString: dependency.url.absoluteString).description
-                        )
+                    .flatMap { dependency -> [SwiftPackageFile.Target.Dependency] in
+                        if let productNames = dependency.products {
+                            return productNames
+                                .map { name in
+                                    return .init(
+                                        name: name,
+                                        package: PackageIdentity(urlString: dependency.url.absoluteString).description
+                                    )
+                                }
+                        } else {
+                            return [
+                                .init(
+                                    name: dependency.name,
+                                    package: PackageIdentity(urlString: dependency.url.absoluteString).description
+                                )
+                            ]
+                        }
                     }
             )
         ]
