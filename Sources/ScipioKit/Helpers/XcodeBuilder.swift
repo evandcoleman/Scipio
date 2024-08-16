@@ -31,15 +31,11 @@ struct XcodeBuilder {
     ) throws -> Path {
 
         var buildSettings: [String: String] = [
-            "BUILD_LIBRARY_FOR_DISTRIBUTION": "YES",
             "DEBUG_INFORMATION_FORMAT": "dwarf-with-dsym",
-            "ENABLE_TESTABILITY": "YES",
+//            "ENABLE_TESTABILITY": "YES",
             "INSTALL_PATH": "/Library/Frameworks",
-            "OTHER_SWIFT_FLAGS": "-no-verify-emitted-module-interface",
             "SKIP_INSTALL": "NO",
-            "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "",
             "SWIFT_COMPILATION_MODE": "wholemodule",
-            "SWIFT_PACKAGE": "NO",
         ]
 
         buildSettings["IOS_DEPLOYMENT_TARGET"] = Config.current.platformVersions[.iOS]
@@ -72,7 +68,12 @@ struct XcodeBuilder {
         return archivePath
     }
 
-    static func createXCFramework(archivePaths: [Path], skipIfExists: Bool, filter isIncluded: ((String) -> Bool)? = nil) throws -> [Path] {
+    static func createXCFramework(
+        archivePaths: [Path],
+        skipIfExists: Bool,
+        useLibraryEvolution: Bool,
+        filter isIncluded: ((String) -> Bool)? = nil
+    ) throws -> [Path] {
         precondition(!archivePaths.isEmpty, "Cannot create XCFramework from zero archives")
 
         let firstArchivePath = archivePaths[0]
@@ -96,7 +97,13 @@ struct XcodeBuilder {
             }
 
             let inputs = try archivePaths
-                .map { try CreateXCFrameworkInput(productName: productName, archivePath: $0) }
+                .map { archivePath in
+                    try CreateXCFrameworkInput(
+                        productName: productName,
+                        archivePath: archivePath,
+                        useLibraryEvolution: useLibraryEvolution
+                    )
+                }
             let command = Xcodebuild(
                 command: .createXCFramework,
                 additionalArguments: try inputs.flatMap { try $0.arguments } + ["-output", output.string]
@@ -112,6 +119,7 @@ struct XcodeBuilder {
     struct CreateXCFrameworkInput {
         let productName: String
         let archivePath: Path
+        let useLibraryEvolution: Bool
 
         var arguments: [String] {
             get throws {
@@ -124,13 +132,22 @@ struct XcodeBuilder {
                     args.append(contentsOf: ["-debug-symbols", path.string])
                 }
 
+                if !useLibraryEvolution {
+                    args.insert("-allow-internal-distribution", at: 0)
+                }
+
                 return args
             }
         }
 
-        init(productName: String, archivePath: Path) throws {
+        init(
+            productName: String,
+            archivePath: Path,
+            useLibraryEvolution: Bool
+        ) throws {
             self.productName = productName
             self.archivePath = archivePath
+            self.useLibraryEvolution = useLibraryEvolution
         }
 
         private var frameworkPath: Path {

@@ -55,6 +55,7 @@ public struct PackageDependency: Dependency {
     public let version: String?
     public let excludes: [String]?
     public let additionalBuildSettings: [String: String]?
+    public let useLibraryEvolution: Bool?
     // Currently, Swift does not support packages that contain a type that is named
     // the same as the package product when built as an .xcframework. The build will
     // succeed but the resulting .swiftinterface file will produce a build error.

@@ -321,6 +321,9 @@ public final class PackageProcessor: DependencyProcessor {
             project.buildSettings.common.MACOSX_DEPLOYMENT_TARGET = deploymentTarget
         }
 
+        project.buildSettings.common.SWIFT_ACTIVE_COMPILATION_CONDITIONS = nil
+        project.buildSettings.release.SWIFT_ACTIVE_COMPILATION_CONDITIONS = nil
+
         try project.save(to: projectAbsolutePath)
 
         return projectPath
@@ -381,24 +384,15 @@ public final class PackageProcessor: DependencyProcessor {
         try packageFile.write(relativeTo: Config.current.getPackagesPath())
     }
 
-    private func resolvePackageDependencies(in project: Path, sourcePackagesPath: Path) throws {
-        log.info("📦  Resolving package dependencies...")
-
-        let command = Xcodebuild(
-            command: .resolvePackageDependencies,
-            project: project.string,
-            clonedSourcePackageDirectory: sourcePackagesPath.string
-        )
-
-        try command.run()
-    }
-
     private func buildAndExport(
         product: PackageProduct,
         target: ResolvedTarget,
         dependencies: [PackageDependency],
         path: Path
     ) throws -> [Artifact] {
+        let useLibraryEvolution = dependencies
+            .contains { $0.useLibraryEvolution != false }
+
         let archivePaths = try options.platforms.sdks.map { sdk -> Path in
 
             let archivePath = try XcodeBuilder.getArchivePath(
@@ -408,13 +402,17 @@ public final class PackageProcessor: DependencyProcessor {
 
             if options.skipClean, archivePath.exists {
                 return archivePath
+            } else if archivePath.exists {
+                try archivePath.delete()
             }
 
-            let additionalBuildSettings = dependencies
+            var additionalBuildSettings = dependencies
                 .compactMap(\.additionalBuildSettings)
                 .reduce(
                     into: [:]
                 ) { $0.merge($1, uniquingKeysWith: { _, new in new }) }
+
+            additionalBuildSettings["BUILD_LIBRARY_FOR_DISTRIBUTION"] = useLibraryEvolution ? "YES" : "NO"
 
             do {
                 let archivePath = try XcodeBuilder.archive(
@@ -443,7 +441,8 @@ public final class PackageProcessor: DependencyProcessor {
 
         let artifacts = try XcodeBuilder.createXCFramework(
             archivePaths: archivePaths,
-            skipIfExists: options.skipClean
+            skipIfExists: options.skipClean,
+            useLibraryEvolution: useLibraryEvolution
         ).map { path in
             return Artifact(
                 name: path.lastComponentWithoutExtension,
