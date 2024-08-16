@@ -21,7 +21,7 @@ public protocol DependencyProcessor {
     func process(
         dependencies: [Input],
         product: ResolvedInput
-    ) async throws -> [AnyArtifact]
+    ) async throws -> [any LocalArtifact]
     func postProcess() async throws
 }
 
@@ -39,12 +39,12 @@ public struct ProductVersion: Equatable, Hashable {
 }
 
 extension DependencyProcessor {
-    public func existingArtifacts(dependencies onlyDependencies: [Input]? = nil) async throws -> [AnyArtifact] {
+    public func existingArtifacts(dependencies onlyDependencies: [Input]? = nil) async throws -> [any LocalArtifact] {
         let dependencies = onlyDependencies ?? self.dependencies
 
         return try await preProcess()
             .filter { resolved in dependencies.contains(where: { resolved.parentNames.contains($0.name) }) }
-            .compactMap { dependencyProduct -> AnyArtifact? in
+            .compactMap { dependencyProduct -> (any LocalArtifact)? in
                 let path =
                     if Config.current.cacheDelegator.requiresCompression {
                         try Config.current.getCompressedFrameworkPath(
@@ -61,19 +61,19 @@ extension DependencyProcessor {
                     return nil
                 }
 
-                return AnyArtifact(Artifact(
+                return Artifact(
                     name: dependencyProduct.productName,
                     parentNames: dependencyProduct.parentNames,
                     version: dependencyProduct.version,
                     path: path
-                ))
+                )
             }
     }
 
     public func process(
         dependencies onlyDependencies: [Input]? = nil,
         accumulatedProducts: [any Product]
-    ) async throws -> ([AnyArtifact], [ResolvedInput]) {
+    ) async throws -> ([any LocalArtifact], [ResolvedInput]) {
 
         let dependencyProducts = try await preProcess()
         let conflictingDependencies: [String: [String]] = (dependencyProducts + accumulatedProducts)
@@ -93,8 +93,9 @@ extension DependencyProcessor {
             )
         }
 
-        var allArtifacts: [AnyArtifact] = []
+        var allArtifacts: [any LocalArtifact] = []
         var missingProducts: [ResolvedInput] = []
+        var existingProducts: [ResolvedInput] = []
 
         for dependencyProduct in dependencyProducts {
             let dependencies = onlyDependencies ?? self.dependencies
@@ -118,6 +119,8 @@ extension DependencyProcessor {
 
             if !exists {
                 missingProducts.append(dependencyProduct)
+            } else {
+                existingProducts.append(dependencyProduct)
             }
         }
 
@@ -128,12 +131,12 @@ extension DependencyProcessor {
                 let path = try Config.current.getFrameworkPath(productName: dependencyProduct.productName)
 
                 if path.exists, self.options.skipClean {
-                    allArtifacts.append(AnyArtifact(Artifact(
+                    allArtifacts.append(Artifact(
                         name: dependencyProduct.productName, 
                         parentNames: dependencyProduct.parentNames,
                         version: dependencyProduct.version,
                         path: path
-                    )))
+                    ))
                 } else {
                     let artifact = try await Config.current.cacheDelegator
                         .get(
@@ -161,9 +164,31 @@ extension DependencyProcessor {
             }
         }
 
+        for product in existingProducts {
+            let path = try Config.current.getFrameworkPath(productName: product.productName)
+
+            if path.exists {
+                allArtifacts.append(Artifact(
+                    name: product.productName,
+                    parentNames: product.parentNames,
+                    version: product.version,
+                    path: path
+                ))
+            }
+        }
+
         try await postProcess()
 
-        return (allArtifacts, dependencyProducts)
+        return (
+            Array(
+                allArtifacts
+                    .reduce(
+                        into: [String: any LocalArtifact]()
+                    ) { $0[$1.name] = $1 }
+                    .values
+            ),
+            dependencyProducts
+        )
     }
 }
 
@@ -179,36 +204,48 @@ public struct ProcessorOptions {
     }
 }
 
-public protocol ArtifactProtocol {
+public protocol LocalArtifact: ArtifactProtocol {
+    var path: Path { get }
+}
+
+public protocol ArtifactProtocol: Hashable {
     var name: String { get }
     var parentNames: [String] { get }
     var version: String { get }
     var resource: URL { get }
 }
 
-public struct AnyArtifact: ArtifactProtocol {
-    public let name: String
-    public let parentNames: [String]
-    public let version: String
-    public let resource: URL
+public typealias AnyArtifact = any ArtifactProtocol
 
-    public var path: Path {
-        return Path(resource.path)
-    }
+//public struct AnyArtifact: ArtifactProtocol {
+//    public let name: String
+//    public let parentNames: [String]
+//    public let version: String
+//    public let resource: URL
+//
+//    public var path: Path {
+//        return Path(resource.path)
+//    }
+//
+//    public let base: AnyHashable
+//
+//    public init<T: ArtifactProtocol>(_ base: T) {
+//        self.base = base
+//        
+//        name = base.name
+//        parentNames = base.parentNames
+//        version = base.version
+//        resource = base.resource
+//    }
+//
+//    public func hash(into hasher: inout Hasher) {
+//        hasher.combine(name)
+//        hasher.combine(parentNames)
+//        hasher.combine(version)
+//    }
+//}
 
-    public let base: Any
-
-    public init<T: ArtifactProtocol>(_ base: T) {
-        self.base = base
-        
-        name = base.name
-        parentNames = base.parentNames
-        version = base.version
-        resource = base.resource
-    }
-}
-
-public struct Artifact: ArtifactProtocol {
+public struct Artifact: LocalArtifact {
     public let name: String
     public let parentNames: [String]
     public let version: String
@@ -217,7 +254,7 @@ public struct Artifact: ArtifactProtocol {
     public var resource: URL { path.url }
 }
 
-public struct CompressedArtifact: ArtifactProtocol {
+public struct CompressedArtifact: LocalArtifact {
     public let name: String
     public let parentNames: [String]
     public let version: String
@@ -230,27 +267,44 @@ public struct CompressedArtifact: ArtifactProtocol {
     }
 }
 
-public struct CachedArtifact {
+public struct CachedArtifact: ArtifactProtocol {
+
     public let name: String
+    public let version: String
     public let parentNames: [String]
     public let url: URL
     public let checksum: String?
 
     internal var localPath: Path?
 
-    init(name: String, parentNames: [String], url: URL, localPath: Path) throws {
+    public var resource: URL {
+        url
+    }
+
+    init(name: String, version: String, parentNames: [String], url: URL, localPath: Path) throws {
         self.name = name
+        self.version = version
         self.parentNames = parentNames
         self.url = url
         self.checksum = try localPath.checksum(.sha256)
         self.localPath = localPath
     }
 
-    init(name: String, parentNames: [String], url: URL) {
+    init(name: String, version: String, parentNames: [String], url: URL) {
         self.name = name
+        self.version = version
         self.parentNames = parentNames
         self.url = url
         self.checksum = nil
         self.localPath = nil
+    }
+
+    init(artifact: any LocalArtifact) {
+        self.name = artifact.name
+        self.version = artifact.version
+        self.parentNames = artifact.parentNames
+        self.url = artifact.path.url
+        self.localPath = artifact.path
+        self.checksum = nil
     }
 }

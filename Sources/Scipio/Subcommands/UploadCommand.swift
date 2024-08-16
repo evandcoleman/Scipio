@@ -30,7 +30,7 @@ struct UploadCommand: AsyncParsableCommand {
             skipClean: options.skipClean
         )
 
-        var artifacts: [AnyArtifact] = []
+        var artifacts: [any LocalArtifact] = []
 
         if let packages = Config.current.packages, !packages.isEmpty {
             let processor = PackageProcessor(

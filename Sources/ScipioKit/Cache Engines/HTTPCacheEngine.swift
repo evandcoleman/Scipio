@@ -48,7 +48,7 @@ extension HTTPCacheEngineProtocol {
         return ((response as? HTTPURLResponse)?.statusCode ?? 500) < 400
     }
 
-    public func put(artifact: CompressedArtifact) async throws -> CachedArtifact {
+    public func put(artifact: any LocalArtifact) async throws -> CachedArtifact {
         let request = uploadUrlRequest(url: uploadUrl(for: artifact.name, version: artifact.version))
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -71,7 +71,8 @@ extension HTTPCacheEngineProtocol {
                         do {
                             continuation.resume(
                                 returning: try CachedArtifact(
-                                    name: artifact.name,
+                                    name: artifact.name, 
+                                    version: artifact.version,
                                     parentNames: artifact.parentNames,
                                     url: downloadUrl(for: artifact.name, version: artifact.version),
                                     localPath: artifact.path
@@ -94,7 +95,7 @@ extension HTTPCacheEngineProtocol {
         parentNames: [String],
         version: String,
         destination: Path
-    ) async throws -> CompressedArtifact {
+    ) async throws -> any LocalArtifact {
         let url: URL = try await withCheckedThrowingContinuation { continuation in
             let url = downloadUrl(for: product, version: version)
 

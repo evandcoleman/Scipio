@@ -44,8 +44,12 @@ struct RunCommand: AsyncParsableCommand {
             skipClean: options.skipClean
         )
         
-        try Runner.updatePackageManifest(at: Config.current.packageRoot, with: cachedArtifacts, removeMissing: options.packages?.isEmpty != false)
-        
+        try Runner.updatePackageManifest(
+            at: Config.current.packageRoot,
+            with: cachedArtifacts,
+            removeMissing: options.packages?.isEmpty != false
+        )
+
         log.success("✅  Done!")
     }
 }

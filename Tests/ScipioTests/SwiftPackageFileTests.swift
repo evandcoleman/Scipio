@@ -124,7 +124,13 @@ let package = Package(
         XCTAssertEqual(existingFile, file.asString(relativeTo: path.parent()))
 
         try artifact.localPath!.write("new file contents")
-        artifact = try CachedArtifact(name: artifact.name, parentNames: artifact.parentNames, url: artifact.url, localPath: artifact.localPath!)
+        artifact = try CachedArtifact(
+            name: artifact.name,
+            version: artifact.version,
+            parentNames: artifact.parentNames,
+            url: artifact.url,
+            localPath: artifact.localPath!
+        )
         file.artifacts[0] = artifact
 //        try file.read()
 

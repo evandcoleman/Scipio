@@ -16,7 +16,7 @@ enum Runner {
         platforms: [Platform],
         force: Bool,
         skipClean: Bool
-    ) async throws -> [AnyArtifact] {
+    ) async throws -> [any LocalArtifact] {
 
         let processorOptions = ProcessorOptions(
             platforms: platforms,
@@ -24,7 +24,7 @@ enum Runner {
             skipClean: skipClean
         )
 
-        var artifacts: [AnyArtifact] = []
+        var artifacts: [any LocalArtifact] = []
         var productVersions: [any Product] = []
 
         if let packages = Config.current.packages, !packages.isEmpty {
@@ -62,7 +62,7 @@ enum Runner {
         return artifacts
     }
 
-    static func upload(artifacts: [AnyArtifact], force: Bool, skipClean: Bool) async throws -> [CachedArtifact] {
+    static func upload(artifacts: [any LocalArtifact], force: Bool, skipClean: Bool) async throws -> [CachedArtifact] {
         return try await Config.current.cacheDelegator
             .upload(artifacts, force: force, skipClean: skipClean)
     }

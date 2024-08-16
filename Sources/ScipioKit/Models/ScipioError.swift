@@ -13,7 +13,11 @@ public enum ScipioError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .zipFailure(let artifact):
-            return "Failed to zip artifact (\(artifact.name)) at \(artifact.path)"
+            if let artifact = artifact as? Artifact {
+                return "Failed to zip artifact (\(artifact.name)) at \(artifact.path)"
+            } else {
+                return "Failed to zip artifact (\(artifact.name))"
+            }
         case .commandFailed(let command, let status, _, let error):
             return "Command `\(command)` failed with status \(status)\(error == nil ? "" : ": \(error!)")"
         case .checksumMismatch(let product):

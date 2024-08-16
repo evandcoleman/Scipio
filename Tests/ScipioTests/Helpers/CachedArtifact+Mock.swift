@@ -13,7 +13,8 @@ extension CachedArtifact {
         try path.write("\(parentName)-\(name)")
 
         return try CachedArtifact(
-            name: name,
+            name: name, 
+            version: "1.0.0",
             parentNames: [parentName],
             url: URL(string: "https://scipio.test/packages/\(name)/\(name).xcframework.zip")!,
             localPath: path

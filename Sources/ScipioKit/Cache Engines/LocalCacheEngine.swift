@@ -32,7 +32,7 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
         return localPath(for: product, version: version).exists
     }
 
-    public func put(artifact: Artifact) async throws -> CachedArtifact {
+    public func put(artifact: any LocalArtifact) async throws -> CachedArtifact {
         let cachePath = localPath(for: artifact.name, version: artifact.version)
 
         if cachePath.exists {
@@ -43,10 +43,15 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
             try cachePath.parent().mkpath()
         }
 
-        try artifact.path.copy(cachePath)
+        if let artifact = artifact as? CompressedArtifact {
+            try artifact.path.copy(cachePath)
+        } else if let artifact = artifact as? Artifact {
+            try artifact.path.copy(cachePath)
+        }
 
         return CachedArtifact(
-            name: artifact.name,
+            name: artifact.name, 
+            version: artifact.version,
             parentNames: artifact.parentNames,
             url: cachePath.url
         )
@@ -57,7 +62,7 @@ public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
         parentNames: [String],
         version: String,
         destination: Path
-    ) async throws -> Artifact {
+    ) async throws -> any LocalArtifact {
         let cachePath = localPath(for: product, version: version)
 
         if cachePath.exists {
