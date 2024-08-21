@@ -2,7 +2,7 @@ import Foundation
 import PackageModel
 import PathKit
 
-public protocol Dependency: NamedDependency, Decodable, Equatable {}
+public protocol Dependency: NamedDependency, Codable, Equatable {}
 
 public struct BinaryDependency: DownloadDependency, Hashable {
     public let name: String

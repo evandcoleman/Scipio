@@ -144,7 +144,7 @@ extension HTTPCacheEngineProtocol {
     }
 }
 
-public struct HTTPCacheEngine: HTTPCacheEngineProtocol, Decodable, Equatable {
+public struct HTTPCacheEngine: HTTPCacheEngineProtocol, Codable, Equatable {
 
     public let url: URL
 

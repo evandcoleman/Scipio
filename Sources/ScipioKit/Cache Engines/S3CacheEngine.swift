@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import PathKit
 
-public struct S3CacheEngine: HTTPCacheEngineProtocol, Decodable, Equatable {
+public struct S3CacheEngine: HTTPCacheEngineProtocol, Codable, Equatable {
 
     public let bucket: String
     public let path: String?

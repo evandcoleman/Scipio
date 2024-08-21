@@ -11,6 +11,7 @@ struct RootCommand: AsyncParsableCommand {
             abstract: "A program to pre-build and cache Swift packages",
             version: "0.4.0",
             subcommands: [
+                InitCommand.self,
                 RunCommand.self,
                 BuildCommand.self,
                 UploadCommand.self,

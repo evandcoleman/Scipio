@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import PathKit
 
-public struct LocalCacheEngine: CacheEngine, Decodable, Equatable {
+public struct LocalCacheEngine: CacheEngine, Codable, Equatable {
     private let path: String
 
     public var normalizedPath: Path {

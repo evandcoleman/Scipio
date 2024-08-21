@@ -2,7 +2,7 @@ import Foundation
 import PathKit
 import Yams
 
-public struct Config: Decodable, Equatable {
+public struct Config: Codable, Equatable {
 
     public internal(set) static var current: Config!
 
@@ -67,6 +67,27 @@ public struct Config: Decodable, Equatable {
         self.githubReleases = githubReleases
     }
 
+    public init(
+        name: String,
+        xcodegenConfig: Path
+    ) throws {
+        let data = try xcodegenConfig.read()
+        let decoder = YAMLDecoder()
+        let xcodegen = try decoder.decode(XcodeGenConfig.self, from: data)
+        let packages = xcodegen
+            .packages
+            .compactMap { $0.value.makePackage(name: $0.key) }
+
+        self.init(
+            name: name,
+            cache: LocalCacheEngine(path: .current),
+            deploymentTarget: [
+                "iOS": "16.0",
+            ],
+            packages: packages
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case name
         case cacheDelegator = "cache"
@@ -103,6 +124,24 @@ public struct Config: Decodable, Equatable {
         } catch {
             log.fatal("Error read config file at path \(path): \(error)")
         }
+    }
+
+    public func write(to path: Path = Path.current + "scipio.yml") throws {
+        let encoder = YAMLEncoder()
+        let data = try encoder.encode(self)
+
+        try path.write(data)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(cacheDelegator, forKey: .cacheDelegator)
+        try container.encode(binaries, forKey: .binaries)
+        try container.encode(packages, forKey: .packages)
+        try container.encode(githubReleases, forKey: .githubReleases)
+        try container.encode(buildDirectory, forKey: .buildDirectory)
+        try container.encode(deploymentTarget, forKey: .deploymentTarget)
     }
 
     func getArchivePath() throws -> Path {
@@ -142,8 +181,49 @@ public struct Config: Decodable, Equatable {
 
         return path
     }
+}
 
-//    func getPackageRepositoryPath(for dependency: any NamedDependency) -> Path {
-//        return buildPath + "PackageRepositories" + dependency.name
-//    }
+private struct XcodeGenConfig: Decodable {
+
+    var packages: [String: Package]
+
+    struct Package: Decodable {
+        var url: String?
+        var github: String?
+        var majorVersion: String?
+        var from: String?
+        var minorVersion: String?
+        var exactVersion: String?
+        var minVersion: String?
+        var version: String?
+        var maxVersion: String?
+        var branch: String?
+        var revision: String?
+
+        func makePackage(name: String) -> PackageDependency? {
+            guard let resolvedUrl = {
+                if let url {
+                    return URL(string: url)!
+                } else if let github {
+                    return URL(string: "https://github.com/\(github)")!
+                } else {
+                    return nil
+                }
+            }() else { return nil }
+
+            return PackageDependency(
+                name: name,
+                url: resolvedUrl,
+                from: from ?? minVersion,
+                revision: revision,
+                branch: branch,
+                exactVersion: exactVersion ?? maxVersion,
+                version: version,
+                excludes: nil,
+                additionalBuildSettings: nil,
+                useLibraryEvolution: nil,
+                products: nil
+            )
+        }
+    }
 }

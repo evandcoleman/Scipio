@@ -3,7 +3,7 @@ import Foundation
 import PathKit
 import Zip
 
-public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
+public final class CacheEngineDelegator: Codable, Equatable, CacheEngine {
     let local: LocalCacheEngine?
     let s3: S3CacheEngine?
     let http: HTTPCacheEngine?
@@ -42,6 +42,13 @@ public final class CacheEngineDelegator: Decodable, Equatable, CacheEngine {
         self.s3 = nil
         self.http = nil
         self._cache = AnyCacheEngine(cache)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(local, forKey: .local)
+        try container.encode(s3, forKey: .s3)
+        try container.encode(http, forKey: .http)
     }
 
     public func downloadUrl(for product: String, version: String) -> URL {
