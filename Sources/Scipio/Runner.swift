@@ -43,21 +43,21 @@ enum Runner {
             productVersions <<< r
         }
 
-//        if let binaries = Config.current.binaries, !binaries.isEmpty {
-//            let processor = BinaryProcessor(
-//                dependencies: binaries,
-//                options: processorOptions,
-//                observabilityScope: observabilitySystem.topScope
-//            )
-//            let filtered = dependencies?
-//                .compactMap { name in binaries.first { $0.name == name } }
-//            let (a, r) = try await processor.process(
-//                dependencies: filtered,
-//                accumulatedResolvedDependencies: resolvedDependencies
-//            )
-//            artifacts <<< a
-//            resolvedDependencies <<< r
-//        }
+        if let binaries = Config.current.binaries, !binaries.isEmpty {
+            let processor = BinaryProcessor(
+                dependencies: binaries,
+                options: processorOptions,
+                observabilityScope: observabilitySystem.topScope
+            )
+            let filtered = dependencies?
+                .compactMap { name in binaries.first { $0.name == name } }
+            let (a, r) = try await processor.process(
+                dependencies: filtered,
+                accumulatedProducts: productVersions
+            )
+            artifacts <<< a
+            productVersions <<< r
+        }
 
         return artifacts
     }

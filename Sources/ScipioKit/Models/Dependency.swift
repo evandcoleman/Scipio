@@ -4,45 +4,11 @@ import PathKit
 
 public protocol Dependency: NamedDependency, Decodable, Equatable {}
 
-public struct BinaryDependency: Dependency {
+public struct BinaryDependency: Dependency, Hashable {
     public let name: String
     public let url: URL
     public let version: String
     public let excludes: [String]?
-
-    public var products: [ProductVersion] {
-        var names = ((try? productNamesCachePath.read()) ?? "")
-            .components(separatedBy: ",")
-            .filter { !$0.isEmpty }
-
-        if let excludes = excludes {
-            names = names
-                .filter { !excludes.contains($0) }
-        }
-
-        return names
-            .map { name in
-                return ProductVersion(
-                    productName: name,
-                    version: version,
-                    parentNames: [self.name]
-                )
-            }
-    }
-
-    public var productNamesCachePath: Path {
-        return Config.current.buildPath + ".binary-products-\(name)-\(version)"
-    }
-
-    public func version(for productName: String) -> String {
-        return version
-    }
-
-    public func cache(_ productNames: [String]) throws {
-        if productNames.filter(\.isEmpty).isEmpty {
-            try productNamesCachePath.write(productNames.joined(separator: ","))
-        }
-    }
 }
 
 public struct PackageDependency: Dependency {

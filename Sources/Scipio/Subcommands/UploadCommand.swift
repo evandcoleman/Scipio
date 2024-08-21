@@ -43,16 +43,16 @@ struct UploadCommand: AsyncParsableCommand {
             artifacts <<< try await processor.existingArtifacts(dependencies: filtered)
         }
 
-//        if let binaries = Config.current.binaries, !binaries.isEmpty {
-//            let processor = BinaryProcessor(
-//                dependencies: binaries,
-//                options: processorOptions,
-//                observabilityScope: observabilitySystem.topScope
-//            )
-//            let filtered = options.packages?
-//                .compactMap { name in binaries.first { $0.name == name } }
-//            artifacts <<< try await processor.existingArtifacts(dependencies: filtered)
-//        }
+        if let binaries = Config.current.binaries, !binaries.isEmpty {
+            let processor = BinaryProcessor(
+                dependencies: binaries,
+                options: processorOptions,
+                observabilityScope: observabilitySystem.topScope
+            )
+            let filtered = options.packages?
+                .compactMap { name in binaries.first { $0.name == name } }
+            artifacts <<< try await processor.existingArtifacts(dependencies: filtered)
+        }
 
         let cachedArtifacts = try await Runner.upload(
             artifacts: artifacts,

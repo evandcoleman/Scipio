@@ -105,14 +105,6 @@ public struct Config: Decodable, Equatable {
         return path
     }
 
-//    func getArchivePath<T: ArtifactProtocol>(for artifact: T) -> Path {
-//        return buildPath + "Archives" + artifact.parentName
-//    }
-//
-//    func getFrameworkPath<T: ArtifactProtocol>(for artifact: T) -> Path {
-//        return getArchivePath(for: artifact) + "\(artifact.name).xcframework"
-//    }
-
     func getFrameworkPath(productName: String) throws -> Path {
         return try getArchivePath() + "\(productName).xcframework"
     }

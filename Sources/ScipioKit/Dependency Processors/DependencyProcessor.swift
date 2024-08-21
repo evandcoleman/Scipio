@@ -82,7 +82,7 @@ extension DependencyProcessor {
                     dependency.productName: dependency.parentNames
                 ]
 
-                accumulated.merge(productNames) { $0 + $1 }
+                accumulated.merge(productNames) { ($0 + $1).uniqued() }
             }
             .filter { $0.value.count > 1 }
 
@@ -99,7 +99,6 @@ extension DependencyProcessor {
 
         for dependencyProduct in dependencyProducts {
             let dependencies = onlyDependencies ?? self.dependencies
-            let dependency = dependencies.first(where: { dependencyProduct.parentNames.contains($0.name) })
 
             if 
                 let onlyDependencies = onlyDependencies,
@@ -216,34 +215,6 @@ public protocol ArtifactProtocol: Hashable {
 }
 
 public typealias AnyArtifact = any ArtifactProtocol
-
-//public struct AnyArtifact: ArtifactProtocol {
-//    public let name: String
-//    public let parentNames: [String]
-//    public let version: String
-//    public let resource: URL
-//
-//    public var path: Path {
-//        return Path(resource.path)
-//    }
-//
-//    public let base: AnyHashable
-//
-//    public init<T: ArtifactProtocol>(_ base: T) {
-//        self.base = base
-//        
-//        name = base.name
-//        parentNames = base.parentNames
-//        version = base.version
-//        resource = base.resource
-//    }
-//
-//    public func hash(into hasher: inout Hasher) {
-//        hasher.combine(name)
-//        hasher.combine(parentNames)
-//        hasher.combine(version)
-//    }
-//}
 
 public struct Artifact: LocalArtifact {
     public let name: String

@@ -7,13 +7,18 @@ cache:
   local:
     path: ./Dependencies
 
-packages:
+binaries:
+  - name: Firebase
+    url: https://github.com/firebase/firebase-ios-sdk/releases/download/11.1.0/Firebase.zip
+    version: 11.1.0
+
+# packages:
   # - name: Apollo
   #   url: https://github.com/apollographql/apollo-ios
   #   from: 1.6.0
-  - name: BarricadeKit
-    url: https://github.com/johntmcintosh/BarricadeKit
-    branch: 3.0.0-alpha
+  # - name: BarricadeKit
+  #   url: https://github.com/johntmcintosh/BarricadeKit
+  #   branch: 3.0.0-alpha
   # - name: Beacon-iOS
   #   url: https://github.com/helpscout/beacon-ios-sdk
   #   from: 3.0.0
@@ -29,27 +34,27 @@ packages:
   # - name: Firebase
   #   url: https://github.com/afresh-technologies/firebase-ios-sdk-xcframeworks
   #   from: 10.0.0
-  - name: Hydra
-    url: https://github.com/malcommac/Hydra
-    from: 2.0.6
-  - name: Instabug
-    url: https://github.com/Instabug/Instabug-SP
-    from: 13.0.0
-  - name: Katana
-    url: https://github.com/BendingSpoons/katana-swift
-    from: 6.0.3
-  - name: KeychainAccess
-    url: https://github.com/kishikawakatsumi/KeychainAccess
-    from: 4.2.2
-  - name: Pendo
-    url: https://github.com/pendo-io/pendo-mobile-sdk
-    from: 3.1.0
-  - name: Reachability
-    url: https://github.com/ashleymills/Reachability.swift
-    from: 5.2.3
-  - name: Segment
-    url: https://github.com/segmentio/analytics-swift
-    from: 1.0.0
+  # - name: Hydra
+  #   url: https://github.com/malcommac/Hydra
+  #   from: 2.0.6
+  # - name: Instabug
+  #   url: https://github.com/Instabug/Instabug-SP
+  #   from: 13.0.0
+  # - name: Katana
+  #   url: https://github.com/BendingSpoons/katana-swift
+  #   from: 6.0.3
+  # - name: KeychainAccess
+  #   url: https://github.com/kishikawakatsumi/KeychainAccess
+  #   from: 4.2.2
+  # - name: Pendo
+  #   url: https://github.com/pendo-io/pendo-mobile-sdk
+  #   from: 3.1.0
+  # - name: Reachability
+  #   url: https://github.com/ashleymills/Reachability.swift
+  #   from: 5.2.3
+  # - name: Segment
+  #   url: https://github.com/segmentio/analytics-swift
+  #   from: 1.0.0
   # - name: Sentry
   #   url: https://github.com/getsentry/sentry-cocoa
   #   from: 8.11.0
@@ -71,17 +76,17 @@ packages:
   # - name: SwiftyJSON
   #   url: https://github.com/SwiftyJSON/SwiftyJSON
   #   from: 5.0.1
-  - name: Tempura
-    url: https://github.com/afresh-technologies/tempura-swift
-    revision: 4deb0732413731ff74db699e2ff1bc7ad32c6d7f
-    excludes:
-      - TempuraTesting
+  # - name: Tempura
+  #   url: https://github.com/afresh-technologies/tempura-swift
+  #   revision: 4deb0732413731ff74db699e2ff1bc7ad32c6d7f
+  #   excludes:
+  #     - TempuraTesting
   # - name: TPKeyboardAvoiding
   #   url: https://github.com/michaeltyson/TPKeyboardAvoiding
   #   from: 1.3.5
-  - name: XCGLogger
-    url: https://github.com/DaveWoodCom/XCGLogger
-    from: 7.0.1
+  # - name: XCGLogger
+  #   url: https://github.com/DaveWoodCom/XCGLogger
+  #   from: 7.0.1
 
   # # - name: Pushwoosh
   # #   url: https://github.com/Pushwoosh/Pushwoosh-XCFramework
