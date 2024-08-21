@@ -9,6 +9,7 @@ public struct BinaryDependency: DownloadDependency, Hashable {
     public let url: URL
     public let version: String?
     public let excludes: [String]?
+    public let products: [String]?
 }
 
 public struct GithubReleaseDependency: DownloadDependency, Hashable {
@@ -16,6 +17,7 @@ public struct GithubReleaseDependency: DownloadDependency, Hashable {
     public let version: String?
     public let filename: String
     public let excludes: [String]?
+    public let products: [String]?
 
     public var name: String {
         return repo.components(separatedBy: "/").last ?? repo

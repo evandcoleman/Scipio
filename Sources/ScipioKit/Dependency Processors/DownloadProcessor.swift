@@ -14,6 +14,7 @@ public protocol DownloadDependency: Dependency {
     var name: String { get }
     var version: String? { get }
     var excludes: [String]? { get }
+    var products: [String]? { get }
 }
 
 open class DownloadProcessor<Dependency: DownloadDependency>: DependencyProcessor {
@@ -56,6 +57,18 @@ open class DownloadProcessor<Dependency: DownloadDependency>: DependencyProcesso
 
         if isExcluded {
             return []
+        }
+
+        let includes = dependencies
+            .compactMap(\.products)
+            .flatMap { $0 }
+
+        if !includes.isEmpty {
+            let isIncluded = includes.contains(product.productName)
+
+            if !isIncluded {
+                return []
+            }
         }
 
         return [

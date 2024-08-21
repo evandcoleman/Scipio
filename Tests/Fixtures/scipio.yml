@@ -16,6 +16,9 @@ githubReleases:
   - name: Firebase
     repo: firebase/firebase-ios-sdk
     filename: Firebase.zip
+    products:
+      - FirebaseAnalytics
+      - FirebaseStorage
 
 # packages:
   # - name: Apollo
