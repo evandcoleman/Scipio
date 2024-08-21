@@ -7,10 +7,15 @@ cache:
   local:
     path: ./Dependencies
 
-binaries:
+# binaries:
+#   - name: Firebase
+#     url: https://github.com/firebase/firebase-ios-sdk/releases/download/11.1.0/Firebase.zip
+#     version: 11.1.0
+
+githubReleases:
   - name: Firebase
-    url: https://github.com/firebase/firebase-ios-sdk/releases/download/11.1.0/Firebase.zip
-    version: 11.1.0
+    repo: firebase/firebase-ios-sdk
+    filename: Firebase.zip
 
 # packages:
   # - name: Apollo

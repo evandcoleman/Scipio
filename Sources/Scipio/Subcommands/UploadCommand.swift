@@ -54,6 +54,17 @@ struct UploadCommand: AsyncParsableCommand {
             artifacts <<< try await processor.existingArtifacts(dependencies: filtered)
         }
 
+        if let releases = Config.current.githubReleases, !releases.isEmpty {
+            let processor = GithubReleaseProcessor(
+                dependencies: releases,
+                options: processorOptions,
+                observabilityScope: observabilitySystem.topScope
+            )
+            let filtered = options.packages?
+                .compactMap { name in releases.first { $0.name == name } }
+            artifacts <<< try await processor.existingArtifacts(dependencies: filtered)
+        }
+
         let cachedArtifacts = try await Runner.upload(
             artifacts: artifacts,
             force: options.force || uploadOptions.forceUpload,

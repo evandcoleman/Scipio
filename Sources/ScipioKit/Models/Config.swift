@@ -10,6 +10,7 @@ public struct Config: Decodable, Equatable {
     public let cacheDelegator: CacheEngineDelegator
     public let binaries: [BinaryDependency]?
     public let packages: [PackageDependency]?
+    public let githubReleases: [GithubReleaseDependency]?
 
     public var buildDirectory: String?
     public let deploymentTarget: [String: String]
@@ -50,12 +51,20 @@ public struct Config: Decodable, Equatable {
 
     private var _path: Path!
 
-    public init<Cache: CacheEngine>(name: String, cache: Cache, deploymentTarget: [String: String], binaries: [BinaryDependency]? = nil, packages: [PackageDependency]? = nil) {
+    public init<Cache: CacheEngine>(
+        name: String,
+        cache: Cache,
+        deploymentTarget: [String: String],
+        binaries: [BinaryDependency]? = nil,
+        packages: [PackageDependency]? = nil,
+        githubReleases: [GithubReleaseDependency]? = nil
+    ) {
         self.name = name
         self.cacheDelegator = CacheEngineDelegator(cache: cache)
         self.deploymentTarget = deploymentTarget
         self.binaries = binaries
         self.packages = packages
+        self.githubReleases = githubReleases
     }
 
     enum CodingKeys: String, CodingKey {
@@ -63,6 +72,7 @@ public struct Config: Decodable, Equatable {
         case cacheDelegator = "cache"
         case binaries
         case packages
+        case githubReleases
         case buildDirectory
         case deploymentTarget
     }

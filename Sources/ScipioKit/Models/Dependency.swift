@@ -4,11 +4,22 @@ import PathKit
 
 public protocol Dependency: NamedDependency, Decodable, Equatable {}
 
-public struct BinaryDependency: Dependency, Hashable {
+public struct BinaryDependency: DownloadDependency, Hashable {
     public let name: String
     public let url: URL
-    public let version: String
+    public let version: String?
     public let excludes: [String]?
+}
+
+public struct GithubReleaseDependency: DownloadDependency, Hashable {
+    public let repo: String
+    public let version: String?
+    public let filename: String
+    public let excludes: [String]?
+
+    public var name: String {
+        return repo.components(separatedBy: "/").last ?? repo
+    }
 }
 
 public struct PackageDependency: Dependency {
@@ -23,15 +34,6 @@ public struct PackageDependency: Dependency {
     public let additionalBuildSettings: [String: String]?
     public let useLibraryEvolution: Bool?
     public let products: [String]?
-    // Currently, Swift does not support packages that contain a type that is named
-    // the same as the package product when built as an .xcframework. The build will
-    // succeed but the resulting .swiftinterface file will produce a build error.
-    // To get around this, we can allow dynamically renaming products and targets
-    // to circumvent the issue.
-//    public let productRenameMapping: [String: String]?
-//    public let targetRenameMapping: [String: String]?
-    // A shortcut to rename a product with the same name as the package
-//    public let renamePackageProduct: String?
 
     public var versionRequirement: PackageModel.PackageDependency.SourceControl.Requirement {
         if let from {

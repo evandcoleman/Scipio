@@ -59,6 +59,22 @@ enum Runner {
             productVersions <<< r
         }
 
+        if let releases = Config.current.githubReleases, !releases.isEmpty {
+            let processor = GithubReleaseProcessor(
+                dependencies: releases,
+                options: processorOptions,
+                observabilityScope: observabilitySystem.topScope
+            )
+            let filtered = dependencies?
+                .compactMap { name in releases.first { $0.name == name } }
+            let (a, r) = try await processor.process(
+                dependencies: filtered,
+                accumulatedProducts: productVersions
+            )
+            artifacts <<< a
+            productVersions <<< r
+        }
+
         return artifacts
     }
 
