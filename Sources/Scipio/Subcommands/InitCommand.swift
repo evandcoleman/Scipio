@@ -25,35 +25,42 @@ struct InitCommand: AsyncParsableCommand {
         log.useColors = !options.noColors
         log.level = options.logLevel
 
-        if let xcodegenConfig = initOptions.xcodegenConfig {
-            try createConfigFromXcodeGen(path: Path(xcodegenConfig))
-        } else {
-            try createBlankConfig()
-        }
+        let path =
+            if let project = initOptions.projectPath {
+                try createConfigFromProject(path: project)
+            } else {
+                try createBlankConfig()
+            }
 
-        log.success("✅  Done!")
+        log.success("✅  Done! Config written to \(path.string)")
     }
 
-    private func createConfigFromXcodeGen(path: Path) throws {
+    private func createConfigFromProject(path: Path) throws -> Path {
         let config = try Config(
             name: initOptions.name,
-            xcodegenConfig: path
+            projectPath: path, 
+            cache: LocalCacheEngine(
+                path: initOptions.outputDirectory + initOptions.name,
+                relativeTo: initOptions.outputDirectory
+            )
         )
-        try config.write()
+
+        return try config.write(to: initOptions.outputPath)
     }
 
-    private func createBlankConfig() throws {
+    private func createBlankConfig() throws -> Path {
         let config = Config(
             name: initOptions.name,
             cache: LocalCacheEngine(
-                path: .current
+                path: initOptions.outputDirectory + initOptions.name,
+                relativeTo: initOptions.outputDirectory
             ),
             deploymentTarget: [
                 "iOS": "16.0",
             ]
         )
         
-        try config.write()
+        return try config.write(to: initOptions.outputPath)
     }
 }
 
@@ -63,8 +70,35 @@ extension InitCommand {
         @Option(help: "Name of dependencies package (defaults to 'Dependencies')")
         var name: String = "Dependencies"
 
-        @Option(help: "Path to an XcodeGen config file")
-        var xcodegenConfig: String?
+        @Option(help: "Path to an Xcode project file to read packages from")
+        var project: String?
+
+        @Option(help: "Path to write Scipio config file to")
+        var output: String?
+
+        fileprivate var projectPath: Path? {
+            if let project {
+                return Path(project)
+            } else if let path = Path.current.glob("*.xcodeproj").first {
+                return path
+            } else {
+                return nil
+            }
+        }
+
+        fileprivate var outputPath: Path {
+            return outputDirectory + "scipio.yml"
+        }
+
+        fileprivate var outputDirectory: Path {
+            if let output {
+                return Path(output)
+            } else if let projectPath {
+                return projectPath.parent()
+            } else {
+                return .current
+            }
+        }
     }
 }
 

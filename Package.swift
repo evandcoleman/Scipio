@@ -34,6 +34,7 @@ let package = Package(
         .package(url: "https://github.com/tsolomko/SWCompression.git", from: "4.6.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", exact: "1.2.3"),
         .package(url: "https://github.com/thii/xcbeautify", exact: "1.1.1"),
+        .package(url: "https://github.com/tuist/XcodeProj", from: "8.23.2"),
         .package(url: "https://github.com/jpsim/Yams", from: "5.0.0"),
         .package(url: "https://github.com/marmelroy/Zip", from: "2.1.1"),
     ],
@@ -54,6 +55,7 @@ let package = Package(
                 .product(name: "SwiftPM-auto", package: "swift-package-manager"),
                 .product(name: "SwiftToolsSupport-auto", package: "swift-tools-support-core"),
                 .product(name: "XcbeautifyLib", package: "xcbeautify"),
+                "XcodeProj",
                 "Yams",
                 "Zip",
             ]

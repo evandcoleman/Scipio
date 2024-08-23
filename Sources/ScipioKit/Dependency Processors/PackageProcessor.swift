@@ -81,7 +81,7 @@ public final class PackageProcessor: DependencyProcessor {
         let loader = ManifestLoader(toolchain: toolchain)
         let workspace = try Workspace(forRootPackage: outputDir, customManifestLoader: loader)
         let graph = try workspace.loadPackageGraph(rootPath: outputDir, observabilityScope: observabilityScope)
-        let manifest = try tsc_await {
+        _ = try tsc_await {
             workspace.loadRootManifest(
                 at: outputDir,
                 observabilityScope: observabilityScope,
@@ -89,7 +89,7 @@ public final class PackageProcessor: DependencyProcessor {
             )
         }
 
-        let projectPath = try writeProject(
+        _ = try writeProject(
             graph: graph,
             directory: packagePath
         )
@@ -299,8 +299,6 @@ public final class PackageProcessor: DependencyProcessor {
         }
         try projectPath.mkpath()
 
-
-
         let project = try pbxproj (
             xcodeprojPath: projectAbsolutePath,
             graph: graph,
@@ -388,7 +386,7 @@ public final class PackageProcessor: DependencyProcessor {
                     identity: .init(urlString: dependency.url.absoluteString),
                     nameForTargetDependencyResolutionOnly: nil,
                     url: .init(dependency.url.absoluteString),
-                    requirement: dependency.versionRequirement,
+                    requirement: dependency.packageVersionRequirement,
                     productFilter: .nothing
                 )
             }
@@ -514,7 +512,7 @@ public final class PackageProcessor: DependencyProcessor {
                     default:
                         return false
                     }
-                } ?? false
+                }
 
             if !swiftModulePath.exists || hasHeaderSearchPath {
                 // Objective-C projects

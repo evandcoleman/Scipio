@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "aexml",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tadija/AEXML.git",
+      "state" : {
+        "revision" : "38f7d00b23ecd891e1ee656fa6aeebd6ba04ecc3",
+        "version" : "4.6.1"
+      }
+    },
+    {
       "identity" : "bitbytedata",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tsolomko/BitByteData",
@@ -151,6 +160,15 @@
       "state" : {
         "revision" : "6ba826167c6b301e7adeb35398cf7d1c27367661",
         "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "xcodeproj",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tuist/XcodeProj",
+      "state" : {
+        "revision" : "a1ff175a2f3bfbec166f33b264263c55f2149720",
+        "version" : "8.23.2"
       }
     },
     {

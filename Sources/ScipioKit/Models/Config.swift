@@ -1,5 +1,6 @@
 import Foundation
 import PathKit
+import XcodeProj
 import Yams
 
 public struct Config: Codable, Equatable {
@@ -69,22 +70,23 @@ public struct Config: Codable, Equatable {
 
     public init(
         name: String,
-        xcodegenConfig: Path
+        projectPath: Path,
+        cache: any CacheEngine
     ) throws {
-        let data = try xcodegenConfig.read()
-        let decoder = YAMLDecoder()
-        let xcodegen = try decoder.decode(XcodeGenConfig.self, from: data)
-        let packages = xcodegen
-            .packages
-            .compactMap { $0.value.makePackage(name: $0.key) }
+        let project = try XcodeProj(path: projectPath)
+        let packages = project
+            .pbxproj
+            .rootObject?
+            .remotePackages
+            .compactMap { $0.makePackage() }
 
         self.init(
             name: name,
-            cache: LocalCacheEngine(path: .current),
+            cache: cache,
             deploymentTarget: [
                 "iOS": "16.0",
             ],
-            packages: packages
+            packages: packages ?? []
         )
     }
 
@@ -126,22 +128,30 @@ public struct Config: Codable, Equatable {
         }
     }
 
-    public func write(to path: Path = Path.current + "scipio.yml") throws {
+    @discardableResult
+    public func write(to path: Path = Path.current + "scipio.yml") throws -> Path {
         let encoder = YAMLEncoder()
+        encoder.options = .init(
+            indent: 2,
+            width: -1,
+            sortKeys: false
+        )
         let data = try encoder.encode(self)
 
         try path.write(data)
+
+        return path
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(name, forKey: .name)
-        try container.encode(cacheDelegator, forKey: .cacheDelegator)
-        try container.encode(binaries, forKey: .binaries)
-        try container.encode(packages, forKey: .packages)
-        try container.encode(githubReleases, forKey: .githubReleases)
-        try container.encode(buildDirectory, forKey: .buildDirectory)
         try container.encode(deploymentTarget, forKey: .deploymentTarget)
+        try container.encodeIfPresent(buildDirectory, forKey: .buildDirectory)
+        try container.encode(cacheDelegator, forKey: .cacheDelegator)
+        try container.encodeIfPresent(binaries, forKey: .binaries)
+        try container.encodeIfPresent(githubReleases, forKey: .githubReleases)
+        try container.encodeIfPresent(packages, forKey: .packages)
     }
 
     func getArchivePath() throws -> Path {
@@ -183,47 +193,19 @@ public struct Config: Codable, Equatable {
     }
 }
 
-private struct XcodeGenConfig: Decodable {
+private extension XCRemoteSwiftPackageReference {
 
-    var packages: [String: Package]
+    func makePackage() -> PackageDependency? {
+        guard
+            let versionRequirement,
+            let urlString = repositoryURL,
+            let url = URL(string: urlString)
+        else { return nil }
 
-    struct Package: Decodable {
-        var url: String?
-        var github: String?
-        var majorVersion: String?
-        var from: String?
-        var minorVersion: String?
-        var exactVersion: String?
-        var minVersion: String?
-        var version: String?
-        var maxVersion: String?
-        var branch: String?
-        var revision: String?
-
-        func makePackage(name: String) -> PackageDependency? {
-            guard let resolvedUrl = {
-                if let url {
-                    return URL(string: url)!
-                } else if let github {
-                    return URL(string: "https://github.com/\(github)")!
-                } else {
-                    return nil
-                }
-            }() else { return nil }
-
-            return PackageDependency(
-                name: name,
-                url: resolvedUrl,
-                from: from ?? minVersion,
-                revision: revision,
-                branch: branch,
-                exactVersion: exactVersion ?? maxVersion,
-                version: version,
-                excludes: nil,
-                additionalBuildSettings: nil,
-                useLibraryEvolution: nil,
-                products: nil
-            )
-        }
+        return PackageDependency(
+            name: url.lastPathComponent,
+            url: url,
+            versionRequirement: versionRequirement
+        )
     }
 }

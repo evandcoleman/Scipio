@@ -38,17 +38,17 @@ public final class CacheEngineDelegator: Codable, Equatable, CacheEngine {
     }
 
     public init<T: CacheEngine>(cache: T) {
-        self.local = nil
-        self.s3 = nil
-        self.http = nil
+        self.local = cache as? LocalCacheEngine
+        self.s3 = cache as? S3CacheEngine
+        self.http = cache as? HTTPCacheEngine
         self._cache = AnyCacheEngine(cache)
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(local, forKey: .local)
-        try container.encode(s3, forKey: .s3)
-        try container.encode(http, forKey: .http)
+        try container.encodeIfPresent(local, forKey: .local)
+        try container.encodeIfPresent(s3, forKey: .s3)
+        try container.encodeIfPresent(http, forKey: .http)
     }
 
     public func downloadUrl(for product: String, version: String) -> URL {

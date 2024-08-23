@@ -3,7 +3,8 @@ import Foundation
 import PathKit
 
 public struct LocalCacheEngine: CacheEngine, Codable, Equatable {
-    private let path: String
+
+    public let path: String
 
     public var normalizedPath: Path {
         if path.hasPrefix("/") {
@@ -20,8 +21,20 @@ public struct LocalCacheEngine: CacheEngine, Codable, Equatable {
         case fileNotFound
     }
 
-    public init(path: Path) {
-        self.path = path.string
+    public init(
+        path: Path,
+        relativeTo: Path? = nil
+    ) {
+        if let relativeTo {
+            var relativePath = path.string
+                .replacingOccurrences(of: relativeTo.string, with: "")
+            if relativePath.hasPrefix("/") {
+                relativePath = String(relativePath.dropFirst())
+            }
+            self.path = relativePath
+        } else {
+            self.path = path.string
+        }
     }
 
     public func downloadUrl(for product: String, version: String) -> URL {
