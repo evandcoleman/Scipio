@@ -47,8 +47,7 @@ public final class PackageWorkspace {
 
         try packageFile.write()
 
-        let packagePath = try paths.packagesRoot()
-        let outputDir = try AbsolutePath(validating: packagePath.string)
+        let outputDir = try AbsolutePath(validating: rootPath.string)
         let toolchain = try UserToolchain(destination: try .hostDestination())
         let loader = ManifestLoader(toolchain: toolchain)
         self.workspace = try Workspace(forRootPackage: outputDir, customManifestLoader: loader)
@@ -187,14 +186,12 @@ public final class PackageWorkspace {
 
     @discardableResult
     public func writeXcodeProject() throws -> Xcode.Project {
-        let packagePath = try paths.packagesRoot()
-
-        return try writeProject(directory: packagePath)
+        return try writeProject(directory: rootPath)
     }
 
     @discardableResult
     public func loadManifest() async throws -> Manifest {
-        let packagePath = try paths.packagesRoot()
+        let packagePath = paths.rootPath
         let outputDir = try AbsolutePath(validating: packagePath.string)
 
         return try await withCheckedThrowingContinuation { continuation in

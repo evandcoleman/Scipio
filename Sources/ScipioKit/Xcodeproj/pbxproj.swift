@@ -397,7 +397,7 @@ public func xcodeProject(
         case .binary:
             productType = .framework
         case .systemModule, .plugin, .macro:
-            throw InternalError("\(target.type) not supported")
+            continue
         }
 
         // Warn if the target name is invalid.

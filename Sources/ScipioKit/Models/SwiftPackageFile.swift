@@ -130,8 +130,13 @@ public struct SwiftPackageFile {
     }
 
     func asString(relativeTo: Path) -> String {
+        #if swift(>=5.9)
+        let swiftToolsVersion = "5.9"
+        #else
+        let swiftToolsVersion = "5.7"
+        #endif
         return """
-// swift-tools-version: 5.7
+// swift-tools-version: \(swiftToolsVersion)
 import PackageDescription
 
 let package = Package(
