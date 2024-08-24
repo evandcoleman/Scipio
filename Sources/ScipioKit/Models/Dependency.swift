@@ -5,7 +5,9 @@ import XcodeProj
 
 import struct TSCUtility.Version
 
-public protocol Dependency: NamedDependency, Codable, Equatable {}
+public protocol Dependency: NamedDependency, Codable, Equatable {
+    var products: [String]? { get }
+}
 
 public struct BinaryDependency: DownloadDependency, Hashable {
     public let name: String

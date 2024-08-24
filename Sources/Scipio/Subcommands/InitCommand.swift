@@ -25,18 +25,20 @@ struct InitCommand: AsyncParsableCommand {
         log.useColors = !options.noColors
         log.level = options.logLevel
 
-        let path =
+        let config =
             if let project = initOptions.projectPath {
                 try await createConfigFromProject(path: project)
             } else {
                 try createBlankConfig()
             }
 
-        log.success("✅  Done! Config written to \(path.string)")
+        log.success("Wrote config file to \(config.path.string)")
+
+        log.success("✅  Done!")
     }
 
-    private func createConfigFromProject(path: Path) async throws -> Path {
-        let config = try await Config(
+    private func createConfigFromProject(path: Path) async throws -> Config {
+        var config = try await Config(
             name: initOptions.name,
             projectPath: path, 
             cache: LocalCacheEngine(
@@ -45,11 +47,13 @@ struct InitCommand: AsyncParsableCommand {
             )
         )
 
-        return try config.write(to: initOptions.outputPath)
+        try config.write(to: initOptions.outputPath)
+
+        return config
     }
 
-    private func createBlankConfig() throws -> Path {
-        let config = Config(
+    private func createBlankConfig() throws -> Config {
+        var config = Config(
             name: initOptions.name,
             cache: LocalCacheEngine(
                 path: initOptions.outputDirectory + initOptions.name,
@@ -60,7 +64,9 @@ struct InitCommand: AsyncParsableCommand {
             ]
         )
         
-        return try config.write(to: initOptions.outputPath)
+        try config.write(to: initOptions.outputPath)
+
+        return config
     }
 }
 

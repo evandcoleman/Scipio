@@ -58,6 +58,12 @@ public struct Config: Codable, Equatable {
         }
     }
 
+    public var allDependencies: [any Dependency] {
+        return (binaries ?? [])
+            + (packages ?? [])
+            + (githubReleases ?? [])
+    }
+
     private var _path: Path!
 
     public init<Cache: CacheEngine>(
@@ -135,7 +141,8 @@ public struct Config: Codable, Equatable {
     }
 
     @discardableResult
-    public func write(to path: Path = Path.current + "scipio.yml") throws -> Path {
+    public mutating func write(to path: Path = Path.current + "scipio.yml") throws -> Path {
+        _path = path
         let encoder = YAMLEncoder()
         encoder.options = .init(
             indent: 2,
