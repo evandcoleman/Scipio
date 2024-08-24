@@ -4,11 +4,6 @@ import ScipioKit
 
 import Basics
 
-let observabilitySystem = ObservabilitySystem { scope, diagnostics in
-    print("[\(scope.description)] \(diagnostics.severity): \(diagnostics.message)")
-}
-
-
 enum Runner {
 
     static func build(
@@ -30,8 +25,7 @@ enum Runner {
         if let packages = Config.current.packages, !packages.isEmpty {
             let processor = PackageProcessor(
                 dependencies: packages,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
+                options: processorOptions
             )
             let filtered = dependencies?
                 .compactMap { name in packages.first { $0.name == name } }
@@ -46,8 +40,7 @@ enum Runner {
         if let binaries = Config.current.binaries, !binaries.isEmpty {
             let processor = BinaryProcessor(
                 dependencies: binaries,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
+                options: processorOptions
             )
             let filtered = dependencies?
                 .compactMap { name in binaries.first { $0.name == name } }
@@ -62,8 +55,7 @@ enum Runner {
         if let releases = Config.current.githubReleases, !releases.isEmpty {
             let processor = GithubReleaseProcessor(
                 dependencies: releases,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
+                options: processorOptions
             )
             let filtered = dependencies?
                 .compactMap { name in releases.first { $0.name == name } }
@@ -93,8 +85,7 @@ enum Runner {
             path: path,
             platforms: Config.current.platformVersions,
             artifacts: artifacts,
-            removeMissing: removeMissing,
-            observabilityScope: observabilitySystem.topScope
+            removeMissing: removeMissing
         )
 
         if packageFile.needsWrite(relativeTo: Config.current.packageRoot) {

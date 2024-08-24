@@ -1,3 +1,4 @@
+import Basics
 import Foundation
 
 public let log: Log = .shared
@@ -7,6 +8,27 @@ public final class Log: NSObject {
     public static let shared = Log()
 
     internal let operationQueue = OperationQueue()
+
+    private let observabilitySystem = ObservabilitySystem { scope, diagnostics in
+        switch diagnostics.severity {
+        case .error:
+            Log.shared.error("[\(scope.description)]: \(diagnostics.message)")
+        case .warning:
+            Log.shared.warning("[\(scope.description)]: \(diagnostics.message)")
+        case .info:
+            Log.shared.info("[\(scope.description)]: \(diagnostics.message)")
+        case .debug:
+            Log.shared.debug("[\(scope.description)]: \(diagnostics.message)")
+        }
+    }
+
+    public var observabilityScope: ObservabilityScope {
+        return observabilitySystem.topScope
+    }
+
+    public func observabilityScope(_ description: String) -> ObservabilityScope {
+        return observabilityScope.makeChildScope(description: description)
+    }
 
     public enum Level {
         case passthrough

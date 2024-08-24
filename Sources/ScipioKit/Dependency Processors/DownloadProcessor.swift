@@ -30,8 +30,7 @@ open class DownloadProcessor<Dependency: DownloadDependency>: DependencyProcesso
 
     required public init(
         dependencies: [Dependency],
-        options: ProcessorOptions,
-        observabilityScope: ObservabilityScope
+        options: ProcessorOptions
     ) {
         self.dependencies = dependencies
         self.options = options

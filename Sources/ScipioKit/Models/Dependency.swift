@@ -143,12 +143,14 @@ public struct PackageDependency: Dependency {
     internal init(
         name: String,
         url: URL,
-        versionRequirement: XCRemoteSwiftPackageReference.VersionRequirement
+        versionRequirement: XCRemoteSwiftPackageReference.VersionRequirement,
+        products: [String]? = nil
     ) {
         self.init(
             name: name,
             url: url,
-            versionRequirement: .init(versionRequirement)
+            versionRequirement: .init(versionRequirement),
+            products: products
         )
     }
 

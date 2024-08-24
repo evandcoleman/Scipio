@@ -27,7 +27,7 @@ struct InitCommand: AsyncParsableCommand {
 
         let path =
             if let project = initOptions.projectPath {
-                try createConfigFromProject(path: project)
+                try await createConfigFromProject(path: project)
             } else {
                 try createBlankConfig()
             }
@@ -35,8 +35,8 @@ struct InitCommand: AsyncParsableCommand {
         log.success("✅  Done! Config written to \(path.string)")
     }
 
-    private func createConfigFromProject(path: Path) throws -> Path {
-        let config = try Config(
+    private func createConfigFromProject(path: Path) async throws -> Path {
+        let config = try await Config(
             name: initOptions.name,
             projectPath: path, 
             cache: LocalCacheEngine(

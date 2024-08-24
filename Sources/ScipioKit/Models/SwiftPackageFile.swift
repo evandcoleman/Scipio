@@ -25,15 +25,14 @@ public struct SwiftPackageFile {
         path: Path,
         platforms: [Platform: String],
         artifacts: [CachedArtifact] = [],
-        removeMissing: Bool,
-        observabilityScope: ObservabilityScope
+        removeMissing: Bool
     ) throws {
         self.name = name
         self.path = path.lastComponent == "Package.swift" ? path : path + "Package.swift"
         self.platforms = platforms
         self.artifacts = artifacts
         self.removeMissing = removeMissing
-        self.observabilityScope = observabilityScope
+        self.observabilityScope = log.observabilityScope("SwiftPackageFile (\(name)")
 
         try read()
     }

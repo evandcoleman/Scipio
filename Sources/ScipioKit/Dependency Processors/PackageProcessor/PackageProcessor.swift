@@ -1,7 +1,7 @@
-import Combine
 import Foundation
 import PathKit
 import Regex
+import XcodeProj
 import Zip
 
 import Basics
@@ -26,146 +26,34 @@ public final class PackageProcessor: DependencyProcessor {
     }
 
     private let urlSession: URLSession = .createWithExtensionsSupport()
-    private let observabilityScope: ObservabilityScope
-
-    private var repositoryManager: RepositoryManager?
+    private var workspace: PackageWorkspace!
 
     public init(
         dependencies: [PackageDependency],
-        options: ProcessorOptions,
-        observabilityScope: ObservabilityScope
+        options: ProcessorOptions
     ) {
         self.dependencies = dependencies
         self.options = options
-        self.observabilityScope = observabilityScope.makeChildScope(description: "Package Processor")
-    }
-
-    private func observabilityScope(for package: PackageDependency) -> ObservabilityScope {
-        return observabilityScope(description: package.name)
-    }
-
-    //    private func observabilityScope(for package: SwiftPackageDescriptor) -> ObservabilityScope {
-    //        return observabilityScope(description: package.name)
-    //    }
-
-    private func observabilityScope(description: String) -> ObservabilityScope {
-        return observabilityScope
-            .makeChildScope(description: description)
-    }
-
-    private func getRepositoryManager() throws -> RepositoryManager {
-        let packagePath = try Config.current.getPackagesPath()
-        let outputDir = try AbsolutePath(validating: packagePath.string)
-        let repositoryProvider = GitRepositoryProvider()
-
-        let repositoryManager = RepositoryManager(
-            fileSystem: localFileSystem,
-            path: outputDir,
-            provider: repositoryProvider,
-            cachePath: .none,
-            initializationWarningHandler: { log.warning($0) },
-            delegate: nil
-        )
-
-        self.repositoryManager = repositoryManager
-
-        return repositoryManager
     }
 
     public func preProcess() async throws -> [PackageProduct] {
-        try writeSwiftPackageFile()
+        let packagePath = try Config.paths.packagesRoot()
 
-        let packagePath = try Config.current.getPackagesPath()
-        let outputDir = try AbsolutePath(validating: packagePath.string)
-        let toolchain = try UserToolchain(destination: try .hostDestination())
-        let loader = ManifestLoader(toolchain: toolchain)
-        let workspace = try Workspace(forRootPackage: outputDir, customManifestLoader: loader)
-        let graph = try workspace.loadPackageGraph(rootPath: outputDir, observabilityScope: observabilityScope)
-        _ = try tsc_await {
-            workspace.loadRootManifest(
-                at: outputDir,
-                observabilityScope: observabilityScope,
-                completion: $0
-            )
-        }
-
-        _ = try writeProject(
-            graph: graph,
-            directory: packagePath
+        self.workspace = try PackageWorkspace(
+            name: Config.current.name,
+            deploymentTarget: Config.current.platformVersions,
+            dependencies: dependencies,
+            rootPath: packagePath
         )
+
+        try await workspace.loadManifest()
+        try workspace.writeXcodeProject()
 
         if !derivedDataPath.exists {
             try derivedDataPath.mkpath()
         }
 
-        let targets = graph
-            .reachableTargets
-            .filter { $0.type == .library && $0.name != Config.current.name }
-            .compactMap { target -> PackageProduct? in
-                guard 
-                    let package = graph.package(for: target),
-                    let dependency = workspace.state.dependencies.first(where: { $0.packageRef.identity == package.identity })
-                else { return nil }
-
-                let version: String? = {
-                    switch dependency.state {
-                    case .sourceControlCheckout(let checkoutState):
-                        switch checkoutState {
-                        case .branch(_, let revision):
-                            return revision.identifier
-                        case .revision(let revision):
-                            return revision.identifier
-                        case .version(_, let revision):
-                            return revision.identifier
-                        }
-                    default:
-                        return nil
-                    }
-                }()
-
-                return PackageProduct(
-                    target: target,
-                    package: package,
-                    version: version
-                )
-            }
-
-        let binaries = graph
-            .binaryArtifacts
-            .flatMap { package, binaries -> [PackageProduct] in
-                guard
-                    let dependency = workspace.state.dependencies.first(where: { $0.packageRef.identity == package })
-                else { return [] }
-
-                let version: String? = {
-                    switch dependency.state {
-                    case .sourceControlCheckout(let checkoutState):
-                        switch checkoutState {
-                        case .branch(_, let revision):
-                            return revision.identifier
-                        case .revision(let revision):
-                            return revision.identifier
-                        case .version(_, let revision):
-                            return revision.identifier
-                        }
-                    default:
-                        return nil
-                    }
-                }()
-
-                return binaries
-                    .map { name, binary in
-                        return PackageProduct(
-                            name: name,
-                            packageUrl: dependency.packageRef.locationString,
-                            binary: binary,
-                            package: package,
-                            version: version
-                        )
-                    }
-            }
-
-        return targets + binaries
+        return workspace.products
     }
 
     public func process(
@@ -173,7 +61,7 @@ public final class PackageProcessor: DependencyProcessor {
         product: PackageProduct
     ) async throws -> [any LocalArtifact] {
 
-        let path = try Config.current.getPackagesPath()
+        let path = try Config.paths.packagesRoot()
 
         let excludedProducts = dependencies
             .flatMap { $0.excludes ?? [] }
@@ -182,7 +70,9 @@ public final class PackageProcessor: DependencyProcessor {
             return []
         }
 
-        try await checkoutPackage(product: product, rootPath: path)
+        for dependency in dependencies {
+            try await workspace.checkoutPackage(dependency)
+        }
 
         var xcFrameworks: [any LocalArtifact] = []
 
@@ -211,53 +101,12 @@ public final class PackageProcessor: DependencyProcessor {
 
     public func postProcess() async throws {}
 
-    private func checkoutPackage(
-        product: PackageProduct,
-        rootPath: Path
-    ) async throws {
-        let repositoryManager = try getRepositoryManager()
-
-        let checkoutPath = try Config.current.getPackageCheckoutPath(packageName: product.packageName)
-        let path = try AbsolutePath(validating: checkoutPath.string)
-        let repository = RepositorySpecifier(url: .init(product.packageUrl))
-        let fileSystem = localFileSystem
-
-        // Remove any existing content at that path.
-        try fileSystem.chmod(.userWritable, path: path, options: [.recursive, .onlyFiles])
-        try fileSystem.removeFileTree(path)
-
-        let handle = try await withCheckedThrowingContinuation { continuation in
-            repositoryManager.lookup(
-                package: .init(urlString: product.packageUrl),
-                repository: repository,
-                skipUpdate: true,
-                observabilityScope: observabilityScope(description: product.packageName),
-                delegateQueue: .sharedConcurrent,
-                callbackQueue: .sharedConcurrent,
-                completion: { result in
-                    continuation.resume(with: result)
-                }
-            )
-        }
-
-        // Create the working copy.
-        let workingCheckout = try handle.createWorkingCopy(at: path, editable: false)
-
-        do {
-            try workingCheckout.checkout(revision: .init(identifier: product.version))
-        } catch let error as GitRepositoryError {
-            observabilityScope(description: product.packageName).emit(error: error.message)
-        } catch {
-            observabilityScope(description: product.packageName).emit(error: error.localizedDescription)
-        }
-    }
-
     private func processBinaryTarget(
         product: PackageProduct,
         binary: BinaryArtifact,
         sourcePath: Path
     ) throws -> Artifact {
-        let targetPath = try Config.current.getFrameworkPath(
+        let targetPath = try Config.paths.framework(
             productName: product.productName
         )
         let artifact = Artifact(
@@ -284,114 +133,6 @@ public final class PackageProcessor: DependencyProcessor {
         try fullPath.copy(targetPath)
 
         return artifact
-    }
-
-    private func writeProject(
-        graph: PackageGraph,
-        directory: Path
-    ) throws -> Path {
-        let outputDir = try AbsolutePath(validating: directory.string)
-        let projectAbsolutePath = XcodeProject.makePath(outputDir: outputDir, projectName: "Packages")
-        let projectPath = Path(projectAbsolutePath.pathString)
-
-        if projectPath.exists {
-            try projectPath.delete()
-        }
-        try projectPath.mkpath()
-
-        let project = try pbxproj (
-            xcodeprojPath: projectAbsolutePath,
-            graph: graph,
-            extraDirs: [],
-            extraFiles: [],
-            options: XcodeprojOptions (
-                xcconfigOverrides: nil,
-                useLegacySchemeGenerator: true
-            ),
-            fileSystem: localFileSystem,
-            observabilityScope: observabilityScope(description: "Xcodeproj")
-        )
-
-        if let deploymentTarget = Config.current.platformVersions[.iOS] {
-            project.buildSettings.common.IPHONEOS_DEPLOYMENT_TARGET = deploymentTarget
-        }
-        if let deploymentTarget = Config.current.platformVersions[.macOS] {
-            project.buildSettings.common.MACOSX_DEPLOYMENT_TARGET = deploymentTarget
-        }
-
-        project.buildSettings.common.SWIFT_ACTIVE_COMPILATION_CONDITIONS = nil
-        project.buildSettings.release.SWIFT_ACTIVE_COMPILATION_CONDITIONS = nil
-
-        try project.save(to: projectAbsolutePath)
-
-        return projectPath
-    }
-
-    private func writeSwiftPackageFile() throws {
-        let packageRoot = try Config.current.getPackagesPath()
-        let packagesPath = packageRoot + "Package.swift"
-
-        let sourcesPath = packageRoot + "Sources" + Config.current.name
-        if !sourcesPath.exists {
-            try sourcesPath.mkpath()
-        }
-        let sourceFilePath = sourcesPath + "\(Config.current.name).swift"
-        if !sourceFilePath.exists {
-            try sourceFilePath.write("", encoding: .utf8)
-        }
-
-        var packageFile = try SwiftPackageFile(
-            name: Config.current.name,
-            path: packagesPath,
-            platforms: Config.current.deploymentTarget.reduce(into: [:]) { result, target in
-                switch target.key {
-                case "iOS":
-                    result[.iOS] = target.value
-                case "macOS":
-                    result[.macOS] = target.value
-                default:
-                    break
-                }
-            },
-            removeMissing: false,
-            observabilityScope: observabilityScope(description: "writeSwiftPackageFile")
-        )
-        packageFile.targets = [
-            .init(
-                name: Config.current.name,
-                dependencies: dependencies
-                    .flatMap { dependency -> [SwiftPackageFile.Target.Dependency] in
-                        if let productNames = dependency.products {
-                            return productNames
-                                .map { name in
-                                    return .init(
-                                        name: name,
-                                        package: PackageIdentity(urlString: dependency.url.absoluteString).description
-                                    )
-                                }
-                        } else {
-                            return [
-                                .init(
-                                    name: dependency.name,
-                                    package: PackageIdentity(urlString: dependency.url.absoluteString).description
-                                )
-                            ]
-                        }
-                    }
-            )
-        ]
-        packageFile.dependencies = dependencies
-            .map { dependency in
-                return .remoteSourceControl(
-                    identity: .init(urlString: dependency.url.absoluteString),
-                    nameForTargetDependencyResolutionOnly: nil,
-                    url: .init(dependency.url.absoluteString),
-                    requirement: dependency.packageVersionRequirement,
-                    productFilter: .nothing
-                )
-            }
-        packageFile.products = []
-        try packageFile.write(relativeTo: Config.current.getPackagesPath())
     }
 
     private func buildAndExport(
@@ -701,145 +442,90 @@ public final class PackageProcessor: DependencyProcessor {
     }
 }
 
-// MARK: PackageProduct
-
-extension PackageProcessor {
-
-    public struct PackageProduct: Product {
-
-        public var productName: String
-        public var version: String
-        public var parentNames: [String]
-        public var packageName: String
-        public var packageUrl: String
-
-        public var buildable: Buildable
-
-        public var isBinary: Bool {
-            switch buildable {
-            case .binary:
-                return true
-            default:
-                return false
-            }
-        }
-    }
-}
-
-extension PackageProcessor.PackageProduct {
-
-    public enum Buildable: Equatable, Hashable {
-        case target(ResolvedTarget)
-        case binary(BinaryArtifact)
-
-        public static func == (lhs: Buildable, rhs: Buildable) -> Bool {
-            switch (lhs, rhs) {
-            case (.target(let lhs), .target(let rhs)):
-                return lhs == rhs
-            case (.binary(let lhs), .binary(let rhs)):
-                return lhs.kind == rhs.kind
-                && lhs.originURL == rhs.originURL
-                && lhs.path == rhs.path
-            default:
-                return false
-            }
-        }
-
-        public func hash(into hasher: inout Hasher) {
-            switch self {
-            case .target(let target):
-                hasher.combine(target)
-            case .binary(let binary):
-                hasher.combine(binary.kind)
-                hasher.combine(binary.originURL)
-                hasher.combine(binary.path)
-            }
-        }
-    }
-
-    init(
-        target: ResolvedTarget,
-        package: ResolvedPackage,
-        version: String?
-    ) {
-        self.productName = target.name
-        self.version = version ?? package.manifest.version?.description ?? "unknown"
-        self.parentNames = [package.manifest.displayName]
-        self.packageName = package.identity.description
-        self.packageUrl = package.manifest.packageLocation
-        self.buildable = .target(target)
-    }
-    
-        init(
-            name: String,
-            packageUrl: String,
-            binary: BinaryArtifact,
-            package: PackageIdentity,
-            version: String?
-        ) {
-            self.productName = name
-            self.version = version ?? "unknown"
-            self.parentNames = [package.description]
-            self.packageName = package.description
-            self.packageUrl = packageUrl
-            self.buildable = .binary(binary)
-        }
-}
-
-// MARK: - WorkspaceState
-
-private struct WorkspaceState: Decodable {
-    let object: Object
-}
-
-extension WorkspaceState {
-    struct Object: Codable {
-        let artifacts: [Artifact]
-        let dependencies: [Dependency]
-
-        struct Dependency: Codable {
-            let packageRef: PackageRef
-            let state: State
-            let subpath: String
-
-            struct State: Codable {
-                let checkoutState: CheckoutState
-                let name: String?
-
-                struct CheckoutState: Codable {
-                    let branch: String?
-                    let revision: String
-                    let version: String?
-                }
-            }
-        }
-
-        struct PackageRef: Codable {
-            let identity: String
-            let kind: String?
-            let name: String
-            let path: String?
-        }
-
-        struct Artifact: Codable {
-            let packageRef: PackageRef
-            let source: Source
-            let targetName: String
-
-            struct Source: Codable {
-                let path: String?
-                let type: String?
-                let checksum, subpath: String?
-                let url: String?
-            }
-        }
-    }
-}
+// MARK: - SchemesList
 
 struct SchemesList: Decodable {
     let project: Project
 
     struct Project: Decodable {
         let schemes: [String]
+    }
+}
+
+// MARK: - Read Dependencies
+
+extension PackageProcessor {
+
+    public static func readDependencies(from path: Path, project: XcodeProj?) async throws -> [Input] {
+        guard let project else { return [] }
+
+        let packageProducts = project
+            .pbxproj
+            .nativeTargets
+            .flatMap { $0.packageProductDependencies ?? [] }
+            .reduce(into: [String: Set<String>]()) { acc, value in
+                guard let package = value.package?.name else { return }
+
+                acc[package, default: []].insert(value.productName)
+            }
+        let packages = try project
+            .pbxproj
+            .rootObject?
+            .remotePackages
+            .compactMap { package in
+                if
+                    let name = package.name,
+                    let productNames = packageProducts[name]
+                {
+                    let availableProducts = try getPackageProducts(package: package)
+
+                    if availableProducts != productNames {
+                        return makePackage(
+                            package: package,
+                            products: Array(productNames).sorted()
+                        )
+                    }
+                }
+
+                return makePackage(package: package)
+            }
+
+        return packages ?? []
+    }
+
+    private static func makePackage(
+        package: XCRemoteSwiftPackageReference,
+        products: [String]? = nil
+    ) -> PackageDependency? {
+        guard
+            let versionRequirement = package.versionRequirement,
+            let urlString = package.repositoryURL,
+            let url = URL(string: urlString)
+        else { return nil }
+
+        return PackageDependency(
+            name: package.name ?? url.lastPathComponent,
+            url: url,
+            versionRequirement: versionRequirement,
+            products: products
+        )
+    }
+
+    private static func getPackageProducts(
+        package: XCRemoteSwiftPackageReference
+    ) throws -> Set<String> {
+        guard let dependency = makePackage(package: package) else { return [] }
+
+        let path = try Path.uniqueTemporary()
+        let workspace = try PackageWorkspace(
+            name: dependency.name,
+            deploymentTarget: [
+                .iOS: "16.0",
+            ],
+            dependencies: [dependency],
+            rootPath: path
+        )
+
+        return Set(workspace.products.map(\.productName))
     }
 }

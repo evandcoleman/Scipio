@@ -1,8 +1,18 @@
-import Combine
+import Basics
 import Foundation
 import PathKit
+import XcodeProj
 
-import Basics
+public enum DependencyProcessors {
+
+    static var all: [any DependencyProcessor.Type] {
+        return [
+            BinaryProcessor.self,
+            GithubReleaseProcessor.self,
+            PackageProcessor.self,
+        ]
+    }
+}
 
 public protocol NamedDependency {
     var name: String { get }
@@ -15,7 +25,7 @@ public protocol DependencyProcessor {
     var dependencies: [Input] { get }
     var options: ProcessorOptions { get }
 
-    init(dependencies: [Input], options: ProcessorOptions, observabilityScope: ObservabilityScope)
+    init(dependencies: [Input], options: ProcessorOptions)
 
     func preProcess() async throws -> [ResolvedInput]
     func process(
@@ -23,6 +33,8 @@ public protocol DependencyProcessor {
         product: ResolvedInput
     ) async throws -> [any LocalArtifact]
     func postProcess() async throws
+
+    static func readDependencies(from path: Path, project: XcodeProj?) async throws -> [Input]
 }
 
 public protocol Product: Equatable, Hashable {
@@ -39,6 +51,11 @@ public struct ProductVersion: Equatable, Hashable {
 }
 
 extension DependencyProcessor {
+
+    public static func readDependencies(from path: Path, project: XcodeProj?) async throws -> [Input] {
+        return []
+    }
+
     public func existingArtifacts(dependencies onlyDependencies: [Input]? = nil) async throws -> [any LocalArtifact] {
         let dependencies = onlyDependencies ?? self.dependencies
 
@@ -47,11 +64,11 @@ extension DependencyProcessor {
             .compactMap { dependencyProduct -> (any LocalArtifact)? in
                 let path =
                     if Config.current.cacheDelegator.requiresCompression {
-                        try Config.current.getCompressedFrameworkPath(
+                        try Config.paths.compressedFramework(
                             productName: dependencyProduct.productName
                         )
                     } else {
-                        try Config.current.getFrameworkPath(
+                        try Config.paths.framework(
                             productName: dependencyProduct.productName
                         )
                     }
@@ -127,7 +144,7 @@ extension DependencyProcessor {
 
         if missingProducts.isEmpty {
             for dependencyProduct in dependencyProducts {
-                let path = try Config.current.getFrameworkPath(productName: dependencyProduct.productName)
+                let path = try Config.paths.framework(productName: dependencyProduct.productName)
 
                 if path.exists, self.options.skipClean {
                     allArtifacts.append(Artifact(
@@ -164,7 +181,7 @@ extension DependencyProcessor {
         }
 
         for product in existingProducts {
-            let path = try Config.current.getFrameworkPath(productName: product.productName)
+            let path = try Config.paths.framework(productName: product.productName)
 
             if path.exists {
                 allArtifacts.append(Artifact(

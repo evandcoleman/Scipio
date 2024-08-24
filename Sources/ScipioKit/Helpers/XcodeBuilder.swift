@@ -18,7 +18,7 @@ func xcrun(_ command: String, _ arguments: [String], in path: Path? = nil, passE
 
 struct XcodeBuilder {
     static func getArchivePath(scheme: String, sdk: Xcodebuild.SDK) throws -> Path {
-        return try Config.current.getArchivePath() + "\(scheme)-\(sdk.rawValue).xcarchive"
+        return try Config.paths.archives() + "\(scheme)-\(sdk.rawValue).xcarchive"
     }
 
     static func archive(

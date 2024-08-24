@@ -35,8 +35,7 @@ struct UploadCommand: AsyncParsableCommand {
         if let packages = Config.current.packages, !packages.isEmpty {
             let processor = PackageProcessor(
                 dependencies: packages,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
+                options: processorOptions
             )
             let filtered = options.packages?
                 .compactMap { name in packages.first { $0.name == name } }
@@ -46,8 +45,7 @@ struct UploadCommand: AsyncParsableCommand {
         if let binaries = Config.current.binaries, !binaries.isEmpty {
             let processor = BinaryProcessor(
                 dependencies: binaries,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
+                options: processorOptions
             )
             let filtered = options.packages?
                 .compactMap { name in binaries.first { $0.name == name } }
@@ -57,8 +55,7 @@ struct UploadCommand: AsyncParsableCommand {
         if let releases = Config.current.githubReleases, !releases.isEmpty {
             let processor = GithubReleaseProcessor(
                 dependencies: releases,
-                options: processorOptions,
-                observabilityScope: observabilitySystem.topScope
+                options: processorOptions
             )
             let filtered = options.packages?
                 .compactMap { name in releases.first { $0.name == name } }

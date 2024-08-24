@@ -7,6 +7,10 @@ public struct Config: Codable, Equatable {
 
     public internal(set) static var current: Config!
 
+    public static var paths: Paths {
+        return current.paths
+    }
+
     public let name: String
     public let cacheDelegator: CacheEngineDelegator
     public let binaries: [BinaryDependency]?
@@ -18,6 +22,10 @@ public struct Config: Codable, Equatable {
 
     public var path: Path { _path }
     public var directory: Path { _path.parent() }
+
+    public var paths: Paths {
+        return Paths(rootPath: buildPath)
+    }
 
     public var buildPath: Path {
         if let buildDirectory = buildDirectory {
@@ -72,13 +80,9 @@ public struct Config: Codable, Equatable {
         name: String,
         projectPath: Path,
         cache: any CacheEngine
-    ) throws {
+    ) async throws {
+        let parentPath = projectPath.parent()
         let project = try XcodeProj(path: projectPath)
-        let packages = project
-            .pbxproj
-            .rootObject?
-            .remotePackages
-            .compactMap { $0.makePackage() }
 
         self.init(
             name: name,
@@ -86,7 +90,9 @@ public struct Config: Codable, Equatable {
             deploymentTarget: [
                 "iOS": "16.0",
             ],
-            packages: packages ?? []
+            binaries: try await BinaryProcessor.readDependencies(from: parentPath, project: project),
+            packages: try await PackageProcessor.readDependencies(from: parentPath, project: project), 
+            githubReleases: try await GithubReleaseProcessor.readDependencies(from: parentPath, project: project)
         )
     }
 
@@ -153,59 +159,50 @@ public struct Config: Codable, Equatable {
         try container.encodeIfPresent(githubReleases, forKey: .githubReleases)
         try container.encodeIfPresent(packages, forKey: .packages)
     }
-
-    func getArchivePath() throws -> Path {
-        let path = buildPath + "Archives"
-
-        if !path.exists {
-            try path.mkpath()
-        }
-
-        return path
-    }
-
-    func getFrameworkPath(productName: String) throws -> Path {
-        return try getArchivePath() + "\(productName).xcframework"
-    }
-
-    func getCompressedFrameworkPath(productName: String) throws -> Path {
-        return try getArchivePath() + "\(productName).xcframework.zip"
-    }
-
-    func getPackagesPath() throws -> Path {
-        let path = buildPath + "Packages"
-
-        if !path.exists {
-            try path.mkpath()
-        }
-
-        return path
-    }
-
-    func getPackageCheckoutPath(packageName: String) throws -> Path {
-        let path = buildPath + "PackageCheckouts" + packageName
-
-        if !path.exists {
-            try path.mkpath()
-        }
-
-        return path
-    }
 }
 
-private extension XCRemoteSwiftPackageReference {
+extension Config {
 
-    func makePackage() -> PackageDependency? {
-        guard
-            let versionRequirement,
-            let urlString = repositoryURL,
-            let url = URL(string: urlString)
-        else { return nil }
+    public struct Paths {
 
-        return PackageDependency(
-            name: url.lastPathComponent,
-            url: url,
-            versionRequirement: versionRequirement
-        )
+        let rootPath: Path
+
+        func archives() throws -> Path {
+            let path = rootPath + "Archives"
+
+            if !path.exists {
+                try path.mkpath()
+            }
+
+            return path
+        }
+
+        func framework(productName: String) throws -> Path {
+            return try archives() + "\(productName).xcframework"
+        }
+
+        func compressedFramework(productName: String) throws -> Path {
+            return try archives() + "\(productName).xcframework.zip"
+        }
+
+        func packagesRoot() throws -> Path {
+            let path = rootPath + "Packages"
+
+            if !path.exists {
+                try path.mkpath()
+            }
+
+            return path
+        }
+
+        func packageCheckout(packageName: String) throws -> Path {
+            let path = rootPath + "PackageCheckouts" + packageName
+
+            if !path.exists {
+                try path.mkpath()
+            }
+
+            return path
+        }
     }
 }
